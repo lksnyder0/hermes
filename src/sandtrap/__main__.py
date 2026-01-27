@@ -13,6 +13,8 @@ from typing import Optional
 
 from sandtrap import __version__
 from sandtrap.config import Config
+from sandtrap.server.asyncssh_backend import AsyncSSHBackend
+from sandtrap.server.backend import PTYRequest, SessionInfo
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -61,6 +63,47 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+async def dummy_session_handler(
+    session_info: SessionInfo, pty_request: PTYRequest, session: object
+) -> None:
+    """
+    Temporary session handler until container management is implemented.
+
+    Args:
+        session_info: Information about the session
+        pty_request: PTY request details
+        session: SSH session object
+    """
+    logger = logging.getLogger(__name__)
+
+    # Send welcome message
+    welcome = (
+        f"\r\nWelcome to SandTrap!\r\n"
+        f"Session ID: {session_info.session_id}\r\n"
+        f"User: {session_info.username}\r\n"
+        f"Terminal: {pty_request.term_type} ({pty_request.width}x{pty_request.height})\r\n"
+        f"\r\n"
+        f"Container management not yet implemented.\r\n"
+        f"Press Ctrl+D to exit.\r\n"
+        f"\r\n"
+    )
+
+    session.stdout.write(welcome)
+
+    # Simple echo loop for testing
+    try:
+        while True:
+            data = await session.stdin.read(1024)
+            if not data:
+                break
+            # Echo back (simple test)
+            session.stdout.write(data)
+    except Exception as e:
+        logger.error(f"Session error: {e}")
+    finally:
+        logger.info(f"Session ended: {session_info.session_id}")
+
+
 async def async_main(config_path: Path) -> int:
     """
     Asynchronous main function.
@@ -72,29 +115,55 @@ async def async_main(config_path: Path) -> int:
         Exit code (0 for success, non-zero for error)
     """
     logger = logging.getLogger(__name__)
+    ssh_backend = None
 
     try:
         # Load configuration
         logger.info(f"Loading configuration from {config_path}")
         config = Config.from_file(config_path)
 
-        # TODO: Initialize components
         logger.info("SandTrap starting...")
         logger.info(f"SSH Server: {config.server.host}:{config.server.port}")
+        logger.info(f"Host Key: {config.server.host_key_path}")
         logger.info(f"Container pool size: {config.container_pool.size}")
+        logger.info(f"Max concurrent sessions: {config.server.max_concurrent_sessions}")
 
-        # TODO: Start the server
-        # await server.start()
+        # Initialize SSH backend
+        logger.info("Initializing SSH backend...")
+        ssh_backend = AsyncSSHBackend(config)
 
-        logger.warning("Server implementation pending - exiting")
+        # Set temporary session handler
+        ssh_backend.set_session_handler(dummy_session_handler)
+
+        # Start SSH server
+        logger.info("Starting SSH server...")
+        await ssh_backend.start()
+
+        logger.info("SandTrap is running! Press Ctrl+C to stop.")
+
+        # Keep running until interrupted
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            pass
+
         return 0
 
     except FileNotFoundError as e:
         logger.error(f"Configuration file not found: {e}")
         return 1
+    except RuntimeError as e:
+        logger.error(f"Runtime error: {e}")
+        return 1
     except Exception as e:
         logger.exception(f"Fatal error: {e}")
         return 1
+    finally:
+        # Clean shutdown
+        if ssh_backend:
+            logger.info("Shutting down SSH server...")
+            await ssh_backend.stop()
+            logger.info("Shutdown complete")
 
 
 def main() -> int:

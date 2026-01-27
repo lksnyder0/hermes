@@ -1,0 +1,31 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "permission": {
+        "serena_activate_project": "allow",
+        "serena_check_onboarding_performed": "allow",
+        "serena_onboarding": "allow",
+        "serena_list_dir": "allow",
+        "serena_get_symbols_overview": "allow",
+        "serena_find_*": "allow",
+        "serena_read_memory": "allow",
+        "serena_write_memory": "ask",
+        "serena_list_memories": "allow",
+        "serena_think_*": "allow",
+        "serena_*": "ask"
+    },
+    "mcp": {
+        "serena": {
+            "type": "local",
+            "command": [
+                "uvx",
+                "--from",
+                "git+https://github.com/oraios/serena",
+                "serena",
+                "start-mcp-server",
+                "--project=./",
+                "--context=ide"
+            ],
+            "enabled": true,
+        }
+    }
+}

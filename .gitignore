@@ -83,3 +83,6 @@ data/containers/*
 *.log
 *.pid
 *.sock
+
+# Temporary testing files
+.tmp/

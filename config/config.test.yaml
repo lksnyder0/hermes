@@ -1,0 +1,68 @@
+# SandTrap Test Configuration
+# Minimal configuration for testing Phase 2 (SSH server only)
+
+server:
+  host: "0.0.0.0"
+  port: 2223
+  host_key_path: "data/keys/ssh_host_rsa_key"
+  max_concurrent_sessions: 5
+  session_timeout: 300  # 5 minutes for testing
+
+authentication:
+  # Test credentials - DO NOT use in production
+  static_credentials:
+    - username: "root"
+      password: "toor"
+    - username: "admin"
+      password: "admin"
+    - username: "test"
+      password: "test"
+  
+  # Accept all auth after 3 failures
+  accept_all_after_failures: 3
+
+# Container settings (not used in Phase 2 but required by config)
+container_pool:
+  size: 3
+  spawn_timeout: 30
+  image: "sandtrap-target-ubuntu:latest"
+  max_session_duration: 300
+  cleanup_stopped_after_days: 1
+  
+  security:
+    network_mode: "none"
+    memory_limit: "256m"
+    cpu_quota: 0.5
+    pids_limit: 100
+    tmpfs_size: "50m"
+    
+    capabilities:
+      drop: ["ALL"]
+      add: ["CHOWN", "SETUID", "SETGID"]
+    
+    security_opt:
+      - "no-new-privileges:true"
+      - "seccomp=default"
+
+recording:
+  enabled: true
+  output_dir: "data/recordings"
+  format: "asciinema"
+  capture_metadata:
+    - connection_info
+    - authentication_attempts
+    - session_duration
+
+logging:
+  level: "INFO"
+  format: "json"
+  output_dir: "data/logs"
+  include_fields:
+    - timestamp
+    - session_id
+    - username
+    - source_ip
+    - event_type
+
+docker:
+  socket_path: "/var/run/docker.sock"

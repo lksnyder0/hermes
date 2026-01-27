@@ -70,12 +70,13 @@ class SSHBackend(ABC):
         pass
 
     @abstractmethod
-    def set_session_handler(self, handler: Callable[[SessionInfo, PTYRequest], Any]) -> None:
+    def set_session_handler(self, handler: Callable[[SessionInfo, PTYRequest, Any], Any]) -> None:
         """
         Set the callback function for handling SSH sessions.
 
         Args:
             handler: Async function to handle new sessions
+                     Receives: (session_info, pty_request, session_object)
         """
         pass
 
