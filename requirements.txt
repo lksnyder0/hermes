@@ -1,0 +1,16 @@
+# SandTrap Production Dependencies
+# Python 3.12+ required
+
+# SSH Server
+asyncssh>=2.14.0
+
+# Docker Container Management
+docker>=7.0.0
+
+# Configuration
+pyyaml>=6.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Utilities
+python-dateutil>=2.8.2

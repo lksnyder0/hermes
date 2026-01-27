@@ -1,0 +1,133 @@
+# SandTrap Configuration Example
+# Copy this file to config.yaml and customize for your deployment
+
+# SSH Server Configuration
+server:
+  # Host to bind the SSH server (0.0.0.0 = all interfaces)
+  host: "0.0.0.0"
+  
+  # Port for SSH server (default: 2222 to avoid conflicts with real SSH)
+  port: 2222
+  
+  # Path to SSH host key (will be generated if doesn't exist)
+  host_key_path: "/data/keys/ssh_host_rsa_key"
+  
+  # Maximum number of concurrent SSH sessions
+  max_concurrent_sessions: 10
+  
+  # Session timeout in seconds (1 hour default)
+  session_timeout: 3600
+
+# Authentication Configuration
+authentication:
+  # List of static username/password credentials
+  # Attackers who guess these will be granted access
+  static_credentials:
+    - username: "root"
+      password: "toor"
+    - username: "root"
+      password: "root"
+    - username: "admin"
+      password: "admin"
+    - username: "admin"
+      password: "admin123"
+    - username: "admin"
+      password: "password"
+    - username: "user"
+      password: "user"
+    - username: "ubuntu"
+      password: "ubuntu"
+  
+  # Accept any credentials after N failed attempts (0 to disable)
+  # This catches attackers using uncommon credentials
+  accept_all_after_failures: 3
+
+# Container Pool Configuration
+container_pool:
+  # Number of pre-warmed containers in ready pool
+  size: 3
+  
+  # Timeout for spawning new containers (seconds)
+  spawn_timeout: 30
+  
+  # Target container image (must be built separately)
+  image: "sandtrap-target-ubuntu:latest"
+  
+  # Maximum session duration before auto-disconnect (seconds)
+  max_session_duration: 3600
+  
+  # Days to keep stopped containers before cleanup (0 = keep forever)
+  cleanup_stopped_after_days: 7
+  
+  # Container security constraints
+  security:
+    # Network mode (none = no network access)
+    network_mode: "none"
+    
+    # Memory limit per container
+    memory_limit: "256m"
+    
+    # CPU quota (0.5 = half a CPU core)
+    cpu_quota: 0.5
+    
+    # Maximum number of processes in container
+    pids_limit: 100
+    
+    # Size of /tmp tmpfs
+    tmpfs_size: "50m"
+    
+    # Linux capabilities
+    capabilities:
+      drop: ["ALL"]
+      add: ["CHOWN", "SETUID", "SETGID"]
+    
+    # Security options
+    security_opt:
+      - "no-new-privileges:true"
+      - "seccomp=default"
+
+# Session Recording Configuration
+recording:
+  # Enable session recording
+  enabled: true
+  
+  # Directory for storing recordings
+  output_dir: "/data/recordings"
+  
+  # Recording format (currently only asciinema supported)
+  format: "asciinema"
+  
+  # Metadata to capture with each session
+  capture_metadata:
+    - connection_info
+    - authentication_attempts
+    - session_duration
+    - container_id
+    - commands_executed
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: "INFO"
+  
+  # Log format (json or text)
+  format: "json"
+  
+  # Directory for log files
+  output_dir: "/data/logs"
+  
+  # Fields to include in structured logs
+  include_fields:
+    - timestamp
+    - session_id
+    - username
+    - source_ip
+    - event_type
+
+# Docker Configuration
+docker:
+  # Path to Docker socket
+  socket_path: "/var/run/docker.sock"
+  
+  # Alternative: use TCP connection (e.g., for socket proxy)
+  # base_url: "tcp://docker-socket-proxy:2375"
