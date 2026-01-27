@@ -162,16 +162,24 @@ sandtrap/
 
 ### MVP (Current Phase)
 
-- [x] Project setup and planning
-- [ ] Core SSH server with asyncssh
-- [ ] Container pool management
-- [ ] Command proxying (SSH ↔ Docker)
-- [ ] Session recording (asciinema format)
-- [ ] Configuration system
-- [ ] Security hardening
-- [ ] Deployment (Docker Compose)
-- [ ] Testing suite
-- [ ] Documentation
+- [x] **Phase 1**: Project setup and planning
+- [x] **Phase 2**: Core SSH server with asyncssh
+  - Abstract SSH backend interface
+  - AsyncSSH implementation with PTY support
+  - Authentication manager (static credentials + accept-all)
+  - Connection/session handling and logging
+- [x] **Phase 3**: Container pool management
+  - Pre-warmed container pool (sub-second allocation)
+  - Security constraints (network isolation, resource limits, capabilities)
+  - Docker integration with graceful shutdown
+  - Target container image (Ubuntu 22.04)
+- [ ] **Phase 4**: Command proxying (SSH ↔ Docker)
+- [ ] **Phase 5**: Session recording (asciinema format)
+- [ ] **Phase 6**: Configuration system
+- [ ] **Phase 7**: Security hardening
+- [ ] **Phase 8**: Deployment (Docker Compose)
+- [ ] **Phase 9**: Testing suite
+- [ ] **Phase 10**: Documentation
 
 ### Post-MVP
 

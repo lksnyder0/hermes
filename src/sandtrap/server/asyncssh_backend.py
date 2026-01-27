@@ -294,6 +294,7 @@ class AsyncSSHBackend(SSHBackend):
         super().__init__(config)
         self.auth_manager = AuthenticationManager(config.authentication)
         self.session_handler: Optional[Callable] = None
+        self.container_pool = None  # Will be set by set_container_pool()
         self._server: Optional[asyncssh.SSHListener] = None
         self._session_info_map: Dict[str, SessionInfo] = {}  # Store session info by connection
 
@@ -356,6 +357,16 @@ class AsyncSSHBackend(SSHBackend):
         """
         self.session_handler = handler
         logger.info("Session handler registered")
+
+    def set_container_pool(self, pool) -> None:
+        """
+        Set the container pool for session handling.
+
+        Args:
+            pool: ContainerPool instance
+        """
+        self.container_pool = pool
+        logger.info("Container pool registered with SSH backend")
 
     async def authenticate(self, session_info: SessionInfo, username: str, password: str) -> bool:
         """

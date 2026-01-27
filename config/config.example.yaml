@@ -84,7 +84,11 @@ container_pool:
     # Security options
     security_opt:
       - "no-new-privileges:true"
-      - "seccomp=default"
+      # Note: Docker's default seccomp profile is automatically applied
+      # when no seccomp option is specified. This blocks ~44 dangerous
+      # syscalls (reboot, mount, swapon, etc.) while allowing normal
+      # shell operations. To use a custom profile, specify:
+      # - "seccomp=/path/to/custom-profile.json"
 
 # Session Recording Configuration
 recording:

@@ -11,8 +11,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import docker
+
 from sandtrap import __version__
 from sandtrap.config import Config
+from sandtrap.container.pool import ContainerPool
 from sandtrap.server.asyncssh_backend import AsyncSSHBackend
 from sandtrap.server.backend import PTYRequest, SessionInfo
 
@@ -116,6 +119,8 @@ async def async_main(config_path: Path) -> int:
     """
     logger = logging.getLogger(__name__)
     ssh_backend = None
+    container_pool = None
+    docker_client = None
 
     try:
         # Load configuration
@@ -128,11 +133,31 @@ async def async_main(config_path: Path) -> int:
         logger.info(f"Container pool size: {config.container_pool.size}")
         logger.info(f"Max concurrent sessions: {config.server.max_concurrent_sessions}")
 
+        # Initialize Docker client
+        logger.info("Connecting to Docker...")
+        if config.docker.base_url:
+            docker_client = docker.DockerClient(base_url=config.docker.base_url)
+        else:
+            docker_client = docker.from_env()
+
+        # Verify Docker connection
+        docker_version = docker_client.version()
+        logger.info(f"Connected to Docker {docker_version.get('Version', 'unknown')}")
+
+        # Initialize container pool
+        logger.info("Initializing container pool...")
+        container_pool = ContainerPool(docker_client, config.container_pool)
+        await container_pool.initialize()
+        logger.info(f"Container pool ready with {config.container_pool.size} containers")
+
         # Initialize SSH backend
         logger.info("Initializing SSH backend...")
         ssh_backend = AsyncSSHBackend(config)
 
-        # Set temporary session handler
+        # Register container pool with SSH backend
+        ssh_backend.set_container_pool(container_pool)
+
+        # Set temporary session handler (Phase 4 will use real container proxy)
         ssh_backend.set_session_handler(dummy_session_handler)
 
         # Start SSH server
@@ -152,6 +177,10 @@ async def async_main(config_path: Path) -> int:
     except FileNotFoundError as e:
         logger.error(f"Configuration file not found: {e}")
         return 1
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker error: {e}")
+        logger.error("Make sure Docker is running and accessible")
+        return 1
     except RuntimeError as e:
         logger.error(f"Runtime error: {e}")
         return 1
@@ -163,7 +192,16 @@ async def async_main(config_path: Path) -> int:
         if ssh_backend:
             logger.info("Shutting down SSH server...")
             await ssh_backend.stop()
-            logger.info("Shutdown complete")
+
+        if container_pool:
+            logger.info("Shutting down container pool...")
+            await container_pool.shutdown()
+
+        if docker_client:
+            logger.info("Closing Docker connection...")
+            docker_client.close()
+
+        logger.info("Shutdown complete")
 
 
 def main() -> int:
