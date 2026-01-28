@@ -48,6 +48,17 @@ This project is currently in active development. Not all features are implemente
 └─────────────────────────────────────────────────────────┘
 ```
 
+## AI Assistant Instructions
+
+This project includes instructions for AI assistants (Claude Code, Serena, etc.) in the [`AGENTS.md`](AGENTS.md) file. These instructions provide:
+- Project context and current status
+- Development workflow (planning → execution phases)
+- Project-specific coding standards
+- Security guidelines for honeypot development
+- Common commands and troubleshooting
+
+AI assistants will automatically load these instructions when activated. Human developers may also find this file useful as a quick reference guide.
+
 ## Quick Start
 
 ### Prerequisites
