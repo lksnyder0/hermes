@@ -83,7 +83,7 @@ excluded_tools: []
 
 # initial prompt for the project. It will always be given to the LLM upon activating the project
 # (contrary to the memories, which are loaded on demand).
-initial_prompt: ""
+initial_prompt: "Read and follow the instructions in AGENTS.md located in the project root. This file contains project-specific workflow guidelines, memory loading instructions, and development conventions."
 
 project_name: "sandtrap"
 included_optional_tools: []
