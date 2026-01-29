@@ -137,146 +137,6 @@ class SandTrapSSHServer(asyncssh.SSHServer):
         return result
 
 
-class SandTrapSSHSession(asyncssh.SSHServerSession):
-    """
-    SSH session handler for SandTrap.
-
-    Manages PTY sessions and connects them to container backends.
-    """
-
-    def __init__(
-        self,
-        session_info: SessionInfo,
-        session_handler: Optional[Callable],
-    ):
-        """
-        Initialize the SSH session.
-
-        Args:
-            session_info: Information about the session
-            session_handler: Callback to handle the session
-        """
-        self.session_info = session_info
-        self.session_handler = session_handler
-        self.pty_request: Optional[PTYRequest] = None
-        self._task: Optional[asyncio.Task] = None
-
-        logger.info(
-            f"New SSH session for {session_info.username} (session_id: {session_info.session_id})"
-        )
-
-    def pty_requested(
-        self,
-        term_type: str,
-        term_size: tuple,
-        term_modes: dict,
-    ) -> bool:
-        """
-        Handle PTY allocation request.
-
-        Args:
-            term_type: Terminal type (e.g., 'xterm')
-            term_size: (width, height, pixel_width, pixel_height)
-            term_modes: Terminal modes
-
-        Returns:
-            True to accept PTY request
-        """
-        width, height = term_size[:2]
-        pixel_width = term_size[2] if len(term_size) > 2 else 0
-        pixel_height = term_size[3] if len(term_size) > 3 else 0
-
-        self.pty_request = PTYRequest(
-            term_type=term_type,
-            width=width,
-            height=height,
-            pixel_width=pixel_width,
-            pixel_height=pixel_height,
-        )
-
-        logger.debug(
-            f"PTY requested: {term_type} {width}x{height} (session: {self.session_info.session_id})"
-        )
-        return True
-
-    def shell_requested(self) -> bool:
-        """
-        Handle shell request.
-
-        Returns:
-            True to accept shell request
-        """
-        logger.info(f"Shell requested (session: {self.session_info.session_id})")
-
-        if not self.pty_request:
-            logger.warning("Shell requested without PTY allocation")
-            return False
-
-        # Start session handler in background
-        if self.session_handler:
-            self._task = asyncio.create_task(self._run_session_handler())
-
-        return True
-
-    async def _run_session_handler(self) -> None:
-        """Run the session handler callback."""
-        try:
-            if self.session_handler and self.pty_request:
-                await self.session_handler(self.session_info, self.pty_request, self)
-        except Exception as e:
-            logger.error(
-                f"Session handler error (session: {self.session_info.session_id}): {e}",
-                exc_info=True,
-            )
-            self.exit(1)
-
-    def terminal_size_changed(
-        self,
-        width: int,
-        height: int,
-        pixwidth: int,
-        pixheight: int,
-    ) -> None:
-        """
-        Handle terminal resize events.
-
-        Args:
-            width: New terminal width in characters
-            height: New terminal height in characters
-            pixwidth: New width in pixels
-            pixheight: New height in pixels
-        """
-        if self.pty_request:
-            self.pty_request.width = width
-            self.pty_request.height = height
-            self.pty_request.pixel_width = pixwidth
-            self.pty_request.pixel_height = pixheight
-
-            logger.debug(
-                f"Terminal resized: {width}x{height} (session: {self.session_info.session_id})"
-            )
-
-    def session_started(self) -> None:
-        """Called when session starts."""
-        logger.debug(f"Session started: {self.session_info.session_id}")
-
-    def connection_lost(self, exc: Optional[Exception]) -> None:
-        """
-        Called when connection is lost.
-
-        Args:
-            exc: Exception that caused disconnection, if any
-        """
-        logger.info(
-            f"Session connection lost: {self.session_info.session_id} "
-            f"({'error: ' + str(exc) if exc else 'normal'})"
-        )
-
-        # Cancel running task if any
-        if self._task and not self._task.done():
-            self._task.cancel()
-
-
 class AsyncSSHBackend(SSHBackend):
     """
     AsyncSSH-based SSH backend implementation.
@@ -329,7 +189,7 @@ class AsyncSSHBackend(SSHBackend):
                 server_factory=lambda: SandTrapSSHServer(
                     self.auth_manager, self.session_handler, self
                 ),
-                session_factory=self._session_factory,
+                process_factory=self._process_factory,
                 encoding=None,  # Handle binary data
             )
 
@@ -384,44 +244,65 @@ class AsyncSSHBackend(SSHBackend):
         """
         return self.auth_manager.validate(session_info.session_id, username, password)
 
-    def _session_factory(self, stdin, stdout, stderr) -> SandTrapSSHSession:
+    async def _process_factory(self, process: asyncssh.SSHServerProcess) -> None:
         """
-        Factory function to create SSH session instances.
+        Factory function invoked for each new SSH session.
 
-        AsyncSSH session_factory receives stdin, stdout, stderr streams.
-        We find the session info through the stored mapping.
+        Extracts PTY info and session metadata from the process object,
+        then delegates to the registered session handler.
 
         Args:
-            stdin: Input stream
-            stdout: Output stream
-            stderr: Error stream
-
-        Returns:
-            SSH session instance
+            process: SSHServerProcess with stdin/stdout/stderr streams
         """
-        # Get the channel from the stdin stream
-        channel = stdin.channel
-        if not channel:
-            logger.error("No channel available in session factory")
-            raise RuntimeError("No channel available")
-
-        # Get the connection from the channel
-        conn = channel.get_connection()
+        # Look up session info via the connection
+        conn = process.channel.get_connection()
         if not conn:
-            logger.error("No connection available in session factory")
-            raise RuntimeError("No connection available")
+            logger.error("No connection available in process factory")
+            process.exit(1)
+            return
 
-        # Find session info from our map - try to match connection
-        # Since we don't have a direct way to get connection ID, use the most recent one
-        # This works because session_factory is called immediately after connection_made
+        # Find session info from our map
         if not self._session_info_map:
             logger.error("No session info available in map")
-            raise RuntimeError("No session info available")
+            process.exit(1)
+            return
 
-        # Get the most recent session info (last added)
+        # Match by connection - use the most recent entry
+        # (session_factory/process_factory is called right after connection_made)
         session_info = list(self._session_info_map.values())[-1]
 
-        return SandTrapSSHSession(
-            session_info=session_info,
-            session_handler=self.session_handler,
+        # Extract PTY info from the process
+        term_type = process.get_terminal_type() or "xterm"
+        term_size = process.get_terminal_size()
+        width = term_size[0] if term_size else 80
+        height = term_size[1] if term_size else 24
+        pixel_width = term_size[2] if term_size and len(term_size) > 2 else 0
+        pixel_height = term_size[3] if term_size and len(term_size) > 3 else 0
+
+        pty_request = PTYRequest(
+            term_type=term_type,
+            width=width,
+            height=height,
+            pixel_width=pixel_width,
+            pixel_height=pixel_height,
         )
+
+        logger.info(
+            f"Process factory: session {session_info.session_id}, "
+            f"term={term_type}, size={width}x{height}"
+        )
+
+        if not self.session_handler:
+            logger.error("No session handler registered")
+            process.exit(1)
+            return
+
+        try:
+            await self.session_handler(session_info, pty_request, process)
+        except Exception as e:
+            logger.error(
+                f"Session handler error (session: {session_info.session_id}): {e}",
+                exc_info=True,
+            )
+        finally:
+            process.exit(0)

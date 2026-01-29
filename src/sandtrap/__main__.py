@@ -18,6 +18,7 @@ from sandtrap.config import Config
 from sandtrap.container.pool import ContainerPool
 from sandtrap.server.asyncssh_backend import AsyncSSHBackend
 from sandtrap.server.backend import PTYRequest, SessionInfo
+from sandtrap.session.proxy import ContainerProxy
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -66,45 +67,73 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def dummy_session_handler(
-    session_info: SessionInfo, pty_request: PTYRequest, session: object
+async def container_session_handler(
+    session_info: SessionInfo,
+    pty_request: PTYRequest,
+    process: object,
+    container_pool: ContainerPool,
 ) -> None:
     """
-    Temporary session handler until container management is implemented.
+    Handle SSH session by proxying to Docker container.
+
+    Lifecycle:
+    1. Allocate container from pool
+    2. Create ContainerProxy
+    3. Start proxy (creates exec and I/O tasks)
+    4. Wait for proxy to complete
+    5. Release container back to pool
 
     Args:
-        session_info: Information about the session
-        pty_request: PTY request details
-        session: SSH session object
+        session_info: Session metadata
+        pty_request: PTY configuration
+        process: asyncssh.SSHServerProcess with stdin/stdout/stderr
+        container_pool: Container pool manager
     """
     logger = logging.getLogger(__name__)
+    logger.info(f"container_session_handler called for session {session_info.session_id}")
+    container = None
+    proxy = None
 
-    # Send welcome message
-    welcome = (
-        f"\r\nWelcome to SandTrap!\r\n"
-        f"Session ID: {session_info.session_id}\r\n"
-        f"User: {session_info.username}\r\n"
-        f"Terminal: {pty_request.term_type} ({pty_request.width}x{pty_request.height})\r\n"
-        f"\r\n"
-        f"Container management not yet implemented.\r\n"
-        f"Press Ctrl+D to exit.\r\n"
-        f"\r\n"
-    )
-
-    session.stdout.write(welcome)
-
-    # Simple echo loop for testing
     try:
-        while True:
-            data = await session.stdin.read(1024)
-            if not data:
-                break
-            # Echo back (simple test)
-            session.stdout.write(data)
+        # Step 1: Allocate container
+        logger.info(f"Allocating container for session {session_info.session_id}")
+        container = await container_pool.allocate(session_info.session_id)
+
+        # Step 2: Create proxy
+        proxy = ContainerProxy(
+            container=container,
+            pty_request=pty_request,
+            process=process,
+            session_id=session_info.session_id,
+        )
+
+        # Step 3: Start proxy
+        await proxy.start()
+
+        # Step 4: Wait for completion
+        await proxy.wait_completion()
+
+    except RuntimeError as e:
+        # Container allocation or exec creation failed
+        logger.error(f"Session setup failed for {session_info.session_id}: {e}")
+        try:
+            error_msg = b"\r\nContainer allocation failed. Please try again later.\r\n"
+            process.stdout.write(error_msg)
+        except Exception:
+            pass  # Session may already be closed
+
     except Exception as e:
-        logger.error(f"Session error: {e}")
+        # Unexpected error
+        logger.exception(f"Session error for {session_info.session_id}: {e}")
+
     finally:
-        logger.info(f"Session ended: {session_info.session_id}")
+        # Step 5: Clean up
+        if proxy:
+            await proxy.stop()
+
+        if container:
+            logger.info(f"Releasing container for session {session_info.session_id}")
+            await container_pool.release(session_info.session_id)
 
 
 async def async_main(config_path: Path) -> int:
@@ -157,8 +186,15 @@ async def async_main(config_path: Path) -> int:
         # Register container pool with SSH backend
         ssh_backend.set_container_pool(container_pool)
 
-        # Set temporary session handler (Phase 4 will use real container proxy)
-        ssh_backend.set_session_handler(dummy_session_handler)
+        # Set session handler with container pool closure
+        async def session_handler_with_pool(
+            session_info: SessionInfo,
+            pty_request: PTYRequest,
+            process: object,
+        ) -> None:
+            await container_session_handler(session_info, pty_request, process, container_pool)
+
+        ssh_backend.set_session_handler(session_handler_with_pool)
 
         # Start SSH server
         logger.info("Starting SSH server...")
