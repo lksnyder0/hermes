@@ -104,14 +104,16 @@ class TestContainerProxyStart:
 
     @pytest.mark.asyncio
     async def test_start_sets_socket_nonblocking(self, proxy, mock_container):
-        mock_socket = MagicMock()
-        mock_container.exec_run.return_value = MagicMock(output=mock_socket)
+        # exec_run().output is a SocketIO wrapper; the code extracts ._sock
+        mock_raw_sock = MagicMock()
+        mock_socket_io = MagicMock(_sock=mock_raw_sock)
+        mock_container.exec_run.return_value = MagicMock(output=mock_socket_io)
 
         with patch.object(proxy, "_ssh_to_container", new_callable=AsyncMock):
             with patch.object(proxy, "_container_to_ssh", new_callable=AsyncMock):
                 await proxy.start()
 
-        mock_socket.setblocking.assert_called_once_with(False)
+        mock_raw_sock.setblocking.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_start_sets_running_flag(self, proxy, mock_container):
@@ -257,3 +259,104 @@ class TestContainerToSSH:
             await proxy._container_to_ssh()
 
         mock_process.stdout.write.assert_called_with(b"hello from container")
+
+
+class TestContainerProxyRecorder:
+    """Tests for recorder integration in ContainerProxy."""
+
+    def test_recorder_defaults_to_none(self, proxy):
+        assert proxy.recorder is None
+
+    def test_recorder_stored(self, mock_container, pty_request, mock_process):
+        recorder = MagicMock()
+        p = ContainerProxy(
+            container=mock_container,
+            pty_request=pty_request,
+            process=mock_process,
+            session_id="test-rec",
+            recorder=recorder,
+        )
+        assert p.recorder is recorder
+
+    @pytest.mark.asyncio
+    async def test_record_input_called(self, mock_container, pty_request, mock_process):
+        """Recorder.record_input should be called with data from SSH stdin."""
+        recorder = MagicMock()
+        p = ContainerProxy(
+            container=mock_container,
+            pty_request=pty_request,
+            process=mock_process,
+            session_id="test-rec",
+            recorder=recorder,
+        )
+        p._running = True
+        p.exec_socket = MagicMock()
+
+        call_count = 0
+
+        async def fake_read(size):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return b"user input"
+            return b""
+
+        mock_process.stdin.read = fake_read
+
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "sock_sendall", new_callable=AsyncMock):
+            await p._ssh_to_container()
+
+        recorder.record_input.assert_called_with(b"user input")
+
+    @pytest.mark.asyncio
+    async def test_record_output_called(self, mock_container, pty_request, mock_process):
+        """Recorder.record_output should be called with data from container."""
+        recorder = MagicMock()
+        p = ContainerProxy(
+            container=mock_container,
+            pty_request=pty_request,
+            process=mock_process,
+            session_id="test-rec",
+            recorder=recorder,
+        )
+        p._running = True
+        p.exec_socket = MagicMock()
+
+        call_count = 0
+
+        async def fake_recv(sock, size):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return b"container output"
+            return b""
+
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "sock_recv", side_effect=fake_recv):
+            await p._container_to_ssh()
+
+        recorder.record_output.assert_called_with(b"container output")
+
+    @pytest.mark.asyncio
+    async def test_record_resize_called(self, mock_container, pty_request, mock_process):
+        """Recorder.record_resize should be called from handle_resize."""
+        recorder = MagicMock()
+        p = ContainerProxy(
+            container=mock_container,
+            pty_request=pty_request,
+            process=mock_process,
+            session_id="test-rec",
+            recorder=recorder,
+        )
+        await p.handle_resize(200, 50)
+        recorder.record_resize.assert_called_once_with(200, 50)
+
+    @pytest.mark.asyncio
+    async def test_no_recorder_no_error(self, proxy, mock_process):
+        """Proxy should work fine without a recorder."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+        mock_process.stdin.read = AsyncMock(return_value=b"")
+
+        await proxy._ssh_to_container()  # should not raise

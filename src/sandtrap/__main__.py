@@ -19,6 +19,7 @@ from sandtrap.container.pool import ContainerPool
 from sandtrap.server.asyncssh_backend import AsyncSSHBackend
 from sandtrap.server.backend import PTYRequest, SessionInfo
 from sandtrap.session.proxy import ContainerProxy
+from sandtrap.session.recorder import SessionRecorder
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -72,45 +73,66 @@ async def container_session_handler(
     pty_request: PTYRequest,
     process: object,
     container_pool: ContainerPool,
+    recording_config=None,
 ) -> None:
     """
     Handle SSH session by proxying to Docker container.
 
     Lifecycle:
     1. Allocate container from pool
-    2. Create ContainerProxy
-    3. Start proxy (creates exec and I/O tasks)
-    4. Wait for proxy to complete
-    5. Release container back to pool
+    2. Create SessionRecorder (if enabled)
+    3. Create ContainerProxy with recorder
+    4. Start proxy (creates exec and I/O tasks)
+    5. Wait for proxy to complete
+    6. Release container back to pool
 
     Args:
         session_info: Session metadata
         pty_request: PTY configuration
         process: asyncssh.SSHServerProcess with stdin/stdout/stderr
         container_pool: Container pool manager
+        recording_config: Optional RecordingConfig for session recording
     """
     logger = logging.getLogger(__name__)
     logger.info(f"container_session_handler called for session {session_info.session_id}")
     container = None
     proxy = None
+    recorder = None
 
     try:
         # Step 1: Allocate container
         logger.info(f"Allocating container for session {session_info.session_id}")
         container = await container_pool.allocate(session_info.session_id)
 
-        # Step 2: Create proxy
+        # Step 2: Create recorder
+        if recording_config:
+            recorder = SessionRecorder(
+                config=recording_config,
+                session_id=session_info.session_id,
+                width=pty_request.width,
+                height=pty_request.height,
+                metadata={
+                    "username": session_info.username,
+                    "source_ip": session_info.source_ip,
+                    "source_port": session_info.source_port,
+                    "container_id": container.id[:12],
+                },
+            )
+            recorder.start()
+
+        # Step 3: Create proxy
         proxy = ContainerProxy(
             container=container,
             pty_request=pty_request,
             process=process,
             session_id=session_info.session_id,
+            recorder=recorder,
         )
 
-        # Step 3: Start proxy
+        # Step 4: Start proxy
         await proxy.start()
 
-        # Step 4: Wait for completion
+        # Step 5: Wait for completion
         await proxy.wait_completion()
 
     except RuntimeError as e:
@@ -127,9 +149,13 @@ async def container_session_handler(
         logger.exception(f"Session error for {session_info.session_id}: {e}")
 
     finally:
-        # Step 5: Clean up
+        # Step 6: Clean up
         if proxy:
             await proxy.stop()
+
+        if recorder:
+            recorder.stop()
+            recorder.write_metadata()
 
         if container:
             logger.info(f"Releasing container for session {session_info.session_id}")
@@ -192,7 +218,9 @@ async def async_main(config_path: Path) -> int:
             pty_request: PTYRequest,
             process: object,
         ) -> None:
-            await container_session_handler(session_info, pty_request, process, container_pool)
+            await container_session_handler(
+                session_info, pty_request, process, container_pool, config.recording
+            )
 
         ssh_backend.set_session_handler(session_handler_with_pool)
 

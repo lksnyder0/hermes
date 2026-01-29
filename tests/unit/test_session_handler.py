@@ -98,6 +98,7 @@ class TestContainerSessionHandler:
             pty_request=pty_request,
             process=mock_process,
             session_id="handler-test-1",
+            recorder=None,
         )
 
     @pytest.mark.asyncio
@@ -207,3 +208,113 @@ class TestContainerSessionHandler:
         # The old code called ssh_session.set_container_proxy — verify it's gone
         assert not hasattr(mock_process, "set_container_proxy") or \
             not mock_process.set_container_proxy.called
+
+
+class TestSessionHandlerRecording:
+    """Tests for recorder integration in container_session_handler."""
+
+    @pytest.mark.asyncio
+    async def test_recorder_created_with_recording_config(
+        self, session_info, pty_request, mock_process, mock_pool, mock_container
+    ):
+        """When recording_config is provided, a SessionRecorder should be created."""
+        mock_pool.allocate.return_value = mock_container
+
+        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
+             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+            proxy_instance = AsyncMock()
+            MockProxy.return_value = proxy_instance
+            recorder_instance = MagicMock()
+            MockRecorder.return_value = recorder_instance
+
+            recording_config = MagicMock()
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool, recording_config
+            )
+
+        MockRecorder.assert_called_once()
+        recorder_instance.start.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recorder_passed_to_proxy(
+        self, session_info, pty_request, mock_process, mock_pool, mock_container
+    ):
+        """Recorder should be passed to ContainerProxy."""
+        mock_pool.allocate.return_value = mock_container
+
+        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
+             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+            proxy_instance = AsyncMock()
+            MockProxy.return_value = proxy_instance
+            recorder_instance = MagicMock()
+            MockRecorder.return_value = recorder_instance
+
+            recording_config = MagicMock()
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool, recording_config
+            )
+
+        call_kwargs = MockProxy.call_args[1]
+        assert call_kwargs["recorder"] is recorder_instance
+
+    @pytest.mark.asyncio
+    async def test_recorder_stopped_in_finally(
+        self, session_info, pty_request, mock_process, mock_pool, mock_container
+    ):
+        """Recorder.stop() and write_metadata() should be called in finally."""
+        mock_pool.allocate.return_value = mock_container
+
+        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
+             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+            proxy_instance = AsyncMock()
+            MockProxy.return_value = proxy_instance
+            recorder_instance = MagicMock()
+            MockRecorder.return_value = recorder_instance
+
+            recording_config = MagicMock()
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool, recording_config
+            )
+
+        recorder_instance.stop.assert_called_once()
+        recorder_instance.write_metadata.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recorder_stopped_on_proxy_failure(
+        self, session_info, pty_request, mock_process, mock_pool, mock_container
+    ):
+        """Recorder should still be stopped if proxy.start() fails."""
+        mock_pool.allocate.return_value = mock_container
+
+        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
+             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+            proxy_instance = AsyncMock()
+            proxy_instance.start.side_effect = RuntimeError("exec failed")
+            MockProxy.return_value = proxy_instance
+            recorder_instance = MagicMock()
+            MockRecorder.return_value = recorder_instance
+
+            recording_config = MagicMock()
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool, recording_config
+            )
+
+        recorder_instance.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_recording_config_no_recorder(
+        self, session_info, pty_request, mock_process, mock_pool, mock_container
+    ):
+        """Without recording_config, no recorder should be created."""
+        mock_pool.allocate.return_value = mock_container
+
+        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
+             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+            proxy_instance = AsyncMock()
+            MockProxy.return_value = proxy_instance
+
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool
+            )
+
+        MockRecorder.assert_not_called()

@@ -35,6 +35,7 @@ class ContainerProxy:
         pty_request: PTYRequest,
         process: object,  # asyncssh.SSHServerProcess (avoiding circular import)
         session_id: str,
+        recorder: object = None,  # Optional SessionRecorder
     ):
         """
         Initialize the container proxy.
@@ -44,11 +45,13 @@ class ContainerProxy:
             pty_request: PTY configuration from SSH client
             process: SSHServerProcess with stdin/stdout/stderr streams
             session_id: Unique session identifier for logging
+            recorder: Optional SessionRecorder for asciicast v2 recording
         """
         self.container = container
         self.pty_request = pty_request
         self.process = process
         self.session_id = session_id
+        self.recorder = recorder
 
         self.exec_socket: Optional[object] = None
         self.ssh_to_container_task: Optional[asyncio.Task] = None
@@ -142,6 +145,9 @@ class ContainerProxy:
                     logger.info(f"SSH client disconnected (session: {self.session_id})")
                     break
 
+                if self.recorder:
+                    self.recorder.record_input(data)
+
                 # Write to container exec socket
                 try:
                     await loop.sock_sendall(self.exec_socket, data)
@@ -190,6 +196,9 @@ class ContainerProxy:
                     logger.info(f"Container exec ended (session: {self.session_id})")
                     break
 
+                if self.recorder:
+                    self.recorder.record_output(data)
+
                 # Write to SSH stdout
                 self.process.stdout.write(data)
                 await self.process.stdout.drain()
@@ -224,7 +233,8 @@ class ContainerProxy:
             f"Terminal resize to {width}x{height} (session: {self.session_id}) - "
             f"not forwarded to container (known limitation)"
         )
-        # Future enhancement: Could implement SIGWINCH signal forwarding
+        if self.recorder:
+            self.recorder.record_resize(width, height)
 
     async def wait_completion(self) -> None:
         """
