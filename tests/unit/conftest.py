@@ -10,7 +10,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from sandtrap.server.backend import PTYRequest
+from hermes.server.backend import PTYRequest
 
 
 # ============================================================================
@@ -173,8 +173,8 @@ def patch_handler_deps():
             proxy_async: If True, proxy instance is AsyncMock; else MagicMock
             recorder_async: If True, recorder instance is AsyncMock; else MagicMock
         """
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy, \
-             patch("sandtrap.__main__.SessionRecorder") as MockRecorder:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy, \
+             patch("hermes.__main__.SessionRecorder") as MockRecorder:
 
             proxy_inst = AsyncMock() if proxy_async else MagicMock()
             recorder_inst = AsyncMock() if recorder_async else MagicMock()

@@ -1,5 +1,5 @@
 """
-Container I/O proxy for SandTrap sessions.
+Container I/O proxy for Hermes sessions.
 
 Manages bidirectional streaming between SSH sessions and Docker exec.
 """
@@ -10,7 +10,7 @@ from typing import Optional
 
 from docker.models.containers import Container
 
-from sandtrap.server.backend import PTYRequest
+from hermes.server.backend import PTYRequest
 
 logger = logging.getLogger(__name__)
 

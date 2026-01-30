@@ -1,8 +1,8 @@
-# SandTrap 🪤
+# Hermes 🎭
 
 **SSH Honeypot with Docker Container Sandboxing**
 
-SandTrap is a security research tool that accepts SSH connections from attackers and proxies them to isolated Docker containers. It captures all commands, session recordings, and attacker behavior while protecting the host system through multiple layers of security.
+Hermes is a security research tool that accepts SSH connections from attackers and proxies them to isolated Docker containers. It captures all commands, session recordings, and attacker behavior while protecting the host system through multiple layers of security.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -30,7 +30,7 @@ This project is currently in active development. Not all features are implemente
                     │ SSH Connection (port 2222)
                     ▼
 ┌─────────────────────────────────────────────────────────┐
-│ SandTrap Container (Alpine + Python)                    │
+│ Hermes Container (Alpine + Python)                    │
 │ ├─ Network: ENABLED                                     │
 │ ├─ SSH Server (asyncssh)                                │
 │ ├─ Authentication Manager                               │
@@ -71,8 +71,8 @@ AI assistants will automatically load these instructions when activated. Human d
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/sandtrap.git
-cd sandtrap
+git clone https://github.com/yourusername/hermes.git
+cd hermes
 
 # Copy example configuration
 cp config/config.example.yaml config/config.yaml
@@ -83,7 +83,7 @@ nano config/config.yaml
 # Build container images (TODO: implement build script)
 # ./scripts/build_images.sh
 
-# Start SandTrap
+# Start Hermes
 # docker-compose up -d
 ```
 
@@ -104,12 +104,12 @@ pip install -e .
 pytest
 
 # Run locally (for development)
-python -m sandtrap --config config/config.yaml
+python -m hermes --config config/config.yaml
 ```
 
 ## Configuration
 
-SandTrap is configured via YAML. See [config/config.example.yaml](config/config.example.yaml) for a fully documented configuration file.
+Hermes is configured via YAML. See [config/config.example.yaml](config/config.example.yaml) for a fully documented configuration file.
 
 Key configuration sections:
 
@@ -134,7 +134,7 @@ Key configuration sections:
 
 ### Multi-Layer Security
 
-SandTrap implements defense-in-depth:
+Hermes implements defense-in-depth:
 
 1. **Network Isolation**: Target containers have `network_mode: none`
 2. **Resource Limits**: CPU, memory, and process limits enforced
@@ -146,7 +146,7 @@ SandTrap implements defense-in-depth:
 ### Known Limitations
 
 - Container escape exploits may still be possible (kernel vulnerabilities)
-- Docker socket access gives SandTrap root-equivalent permissions
+- Docker socket access gives Hermes root-equivalent permissions
 - Stopped containers accumulate disk space (configure cleanup)
 
 See [SECURITY.md](SECURITY.md) (coming soon) for detailed security documentation.
@@ -154,14 +154,14 @@ See [SECURITY.md](SECURITY.md) (coming soon) for detailed security documentation
 ## Project Structure
 
 ```
-sandtrap/
-├── src/sandtrap/          # Python source code
+hermes/
+├── src/hermes/          # Python source code
 │   ├── server/            # SSH server implementation
 │   ├── container/         # Docker container management
 │   ├── session/           # Session handling and recording
 │   └── utils/             # Utilities and logging
 ├── containers/            # Container image definitions
-│   ├── honeypot/          # SandTrap honeypot (Alpine)
+│   ├── honeypot/          # Hermes honeypot (Alpine)
 │   └── targets/           # Target containers (Ubuntu, etc.)
 ├── config/                # Configuration files
 ├── tests/                 # Unit and integration tests
@@ -223,4 +223,4 @@ This tool is for **security research and educational purposes only**. The author
 
 ---
 
-**SandTrap** - Trapping attackers in sandboxes since 2026
+**Hermes** - Trapping attackers in sandboxes since 2026

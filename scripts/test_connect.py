@@ -10,7 +10,7 @@ so we must request a PTY and shell rather than using conn.run().
 
 Prerequisites:
     1. SandTrap must be running:
-       cd src && python -m sandtrap --config ../config/config.test.yaml --log-level DEBUG
+       cd src && python -m hermes --config ../config/config.test.yaml --log-level DEBUG
     2. asyncssh must be installed:
        pip install asyncssh
 
@@ -106,7 +106,7 @@ async def run_test(host: str, port: int, username: str, password: str) -> int:
         print(f"Connection failed: {e}", file=sys.stderr)
         print("Is SandTrap running? Start it with:", file=sys.stderr)
         print(
-            "  cd src && python -m sandtrap --config ../config/config.test.yaml --log-level DEBUG",
+            "  cd src && python -m hermes --config ../config/config.test.yaml --log-level DEBUG",
             file=sys.stderr,
         )
         return 1

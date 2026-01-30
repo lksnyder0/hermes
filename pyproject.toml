@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sandtrap"
+name = "hermes"
 version = "0.1.0"
 description = "SSH honeypot with Docker container sandboxing for capturing attacker behavior"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
-    {name = "SandTrap Contributors"}
+    {name = "Hermes Contributors"}
 ]
 keywords = ["honeypot", "ssh", "security", "docker", "malware-analysis"]
 classifiers = [
@@ -52,13 +52,13 @@ dev = [
 ]
 
 [project.scripts]
-sandtrap = "sandtrap.__main__:main"
+hermes = "hermes.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/sandtrap"
-Documentation = "https://github.com/yourusername/sandtrap/blob/main/README.md"
-Repository = "https://github.com/yourusername/sandtrap"
-Issues = "https://github.com/yourusername/sandtrap/issues"
+Homepage = "https://github.com/lksnyder0/hermes"
+Documentation = "https://github.com/lksnyder0/hermes/blob/main/README.md"
+Repository = "https://github.com/lksnyder0/hermes"
+Issues = "https://github.com/lksnyder0/hermes/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -134,7 +134,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --cov=sandtrap --cov-report=term-missing --cov-report=html"
+addopts = "-ra -q --strict-markers --cov=hermes --cov-report=term-missing --cov-report=html"
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"

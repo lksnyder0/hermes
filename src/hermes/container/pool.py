@@ -1,5 +1,5 @@
 """
-Container pool manager for SandTrap.
+Container pool manager for Hermes.
 
 This module manages a pool of pre-warmed Docker containers for fast SSH session
 allocation. Containers are created on startup, allocated to sessions on demand,
@@ -15,8 +15,8 @@ from typing import Dict, List, Optional, Tuple
 import docker
 from docker.models.containers import Container
 
-from sandtrap.config import ContainerPoolConfig
-from sandtrap.container.security import build_container_config
+from hermes.config import ContainerPoolConfig
+from hermes.container.security import build_container_config
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +320,7 @@ class ContainerPool:
         """
         Generate a unique container name.
 
-        Format: sandtrap-target-{id}-{timestamp}
+        Format: hermes-target-{id}-{timestamp}
         Where id is first 8 chars of session_id or random UUID
 
         Args:
@@ -335,7 +335,7 @@ class ContainerPool:
             id_part = str(uuid.uuid4())[:8]
 
         timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        return f"sandtrap-target-{id_part}-{timestamp}"
+        return f"hermes-target-{id_part}-{timestamp}"
 
     async def _cleanup_ready_containers(self) -> None:
         """

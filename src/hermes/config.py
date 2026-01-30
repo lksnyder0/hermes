@@ -1,5 +1,5 @@
 """
-Configuration management for SandTrap.
+Configuration management for Hermes.
 
 This module handles loading, validating, and accessing configuration from YAML files.
 """
@@ -68,7 +68,7 @@ class ContainerPoolConfig(BaseModel):
     size: int = Field(default=3, ge=1, description="Number of containers in ready pool")
     spawn_timeout: int = Field(default=30, ge=5, description="Timeout for container spawn")
     image: str = Field(
-        default="sandtrap-target-ubuntu:latest", description="Target container image"
+        default="hermes-target-ubuntu:latest", description="Target container image"
     )
     max_session_duration: int = Field(
         default=3600, ge=60, description="Max session duration in seconds"
@@ -125,7 +125,7 @@ class DockerConfig(BaseModel):
 
 
 class Config(BaseSettings):
-    """Main SandTrap configuration."""
+    """Main Hermes configuration."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
     authentication: AuthenticationConfig = Field(default_factory=AuthenticationConfig)

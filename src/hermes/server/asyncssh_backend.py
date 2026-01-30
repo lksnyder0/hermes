@@ -1,5 +1,5 @@
 """
-AsyncSSH backend implementation for SandTrap.
+AsyncSSH backend implementation for Hermes.
 
 This module implements the SSH server using the asyncssh library.
 """
@@ -12,16 +12,16 @@ from typing import Any, Callable, Dict, Optional
 
 import asyncssh
 
-from sandtrap.config import Config
-from sandtrap.server.auth import AuthenticationManager
-from sandtrap.server.backend import PTYRequest, SSHBackend, SessionInfo
+from hermes.config import Config
+from hermes.server.auth import AuthenticationManager
+from hermes.server.backend import PTYRequest, SSHBackend, SessionInfo
 
 logger = logging.getLogger(__name__)
 
 
-class SandTrapSSHServer(asyncssh.SSHServer):
+class HermesSSHServer(asyncssh.SSHServer):
     """
-    AsyncSSH server implementation for SandTrap.
+    AsyncSSH server implementation for Hermes.
 
     Handles connection establishment, authentication, and session setup.
     """
@@ -149,7 +149,7 @@ class AsyncSSHBackend(SSHBackend):
         Initialize the AsyncSSH backend.
 
         Args:
-            config: SandTrap configuration
+            config: Hermes configuration
         """
         super().__init__(config)
         self.auth_manager = AuthenticationManager(config.authentication)
@@ -186,7 +186,7 @@ class AsyncSSHBackend(SSHBackend):
                 host=host,
                 port=port,
                 server_host_keys=[str(host_key_path)],
-                server_factory=lambda: SandTrapSSHServer(
+                server_factory=lambda: HermesSSHServer(
                     self.auth_manager, self.session_handler, self
                 ),
                 process_factory=self._process_factory,
@@ -232,7 +232,7 @@ class AsyncSSHBackend(SSHBackend):
         """
         Authenticate a user (not used directly in this implementation).
 
-        Authentication happens in the SandTrapSSHServer.validate_password method.
+        Authentication happens in the HermesSSHServer.validate_password method.
 
         Args:
             session_info: Current session information

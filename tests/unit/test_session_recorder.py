@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sandtrap.config import RecordingConfig
-from sandtrap.session.recorder import SessionRecorder
+from hermes.config import RecordingConfig
+from hermes.session.recorder import SessionRecorder
 
 
 @pytest.fixture

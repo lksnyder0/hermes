@@ -1,4 +1,4 @@
-# SandTrap Production Dependencies
+# Hermes Production Dependencies
 # Python 3.12+ required
 
 # SSH Server

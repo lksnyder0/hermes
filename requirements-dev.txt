@@ -1,4 +1,4 @@
-# SandTrap Development Dependencies
+# Hermes Development Dependencies
 
 # Include production dependencies
 -r requirements.txt

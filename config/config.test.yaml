@@ -1,4 +1,4 @@
-# SandTrap Test Configuration
+# Hermes Test Configuration
 # Minimal configuration for testing Phase 2 (SSH server only)
 
 server:
@@ -25,7 +25,7 @@ authentication:
 container_pool:
   size: 3
   spawn_timeout: 30
-  image: "sandtrap-target-ubuntu:latest"
+  image: "hermes-target-ubuntu:latest"
   max_session_duration: 300
   cleanup_stopped_after_days: 1
   

@@ -1,4 +1,4 @@
-# SandTrap Target Container - Ubuntu 22.04
+# Hermes Target Container - Ubuntu 22.04
 # This container serves as the sandbox environment for attacker sessions.
 # Network is disabled (network_mode=none) at runtime for isolation.
 

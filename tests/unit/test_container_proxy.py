@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandtrap.server.backend import PTYRequest
-from sandtrap.session.proxy import ContainerProxy
+from hermes.server.backend import PTYRequest
+from hermes.session.proxy import ContainerProxy
 
 
 
