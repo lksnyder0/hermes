@@ -11,33 +11,7 @@ from sandtrap.server.backend import PTYRequest
 from sandtrap.session.proxy import ContainerProxy
 
 
-@pytest.fixture
-def pty_request():
-    return PTYRequest(
-        term_type="xterm-256color",
-        width=120,
-        height=40,
-    )
 
-
-@pytest.fixture
-def mock_process():
-    """Mock SSHServerProcess with async stdin and stdout."""
-    process = MagicMock()
-    process.stdin = AsyncMock()
-    process.stdout = MagicMock()
-    process.stdout.write = MagicMock()
-    process.stdout.drain = AsyncMock()
-    process.stderr = MagicMock()
-    return process
-
-
-@pytest.fixture
-def mock_container():
-    """Mock Docker container."""
-    container = MagicMock()
-    container.id = "abc123def456"
-    return container
 
 
 @pytest.fixture
@@ -104,16 +78,26 @@ class TestContainerProxyStart:
 
     @pytest.mark.asyncio
     async def test_start_sets_socket_nonblocking(self, proxy, mock_container):
-        # exec_run().output is a SocketIO wrapper; the code extracts ._sock
-        mock_raw_sock = MagicMock()
-        mock_socket_io = MagicMock(_sock=mock_raw_sock)
-        mock_container.exec_run.return_value = MagicMock(output=mock_socket_io)
+        # Create a real socket mock that tracks setblocking calls
+        class SocketMock:
+            def __init__(self):
+                self.blocking = True
+
+            def setblocking(self, flag):
+                self.blocking = flag
+
+        # exec_run().output is a SocketIO wrapper with ._sock attribute
+        raw_sock = SocketMock()
+        socket_io = type('SocketIO', (), {'_sock': raw_sock})()
+        mock_container.exec_run.return_value = MagicMock(output=socket_io)
 
         with patch.object(proxy, "_ssh_to_container", new_callable=AsyncMock):
             with patch.object(proxy, "_container_to_ssh", new_callable=AsyncMock):
                 await proxy.start()
 
-        mock_raw_sock.setblocking.assert_called_once_with(False)
+        # Verify socket was extracted and marked non-blocking
+        assert proxy.exec_socket is raw_sock
+        assert proxy.exec_socket.blocking is False
 
     @pytest.mark.asyncio
     async def test_start_sets_running_flag(self, proxy, mock_container):
