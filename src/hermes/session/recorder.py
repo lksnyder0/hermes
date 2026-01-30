@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from sandtrap.config import RecordingConfig
+from hermes.config import RecordingConfig
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sandtrap.config import ContainerSecurityConfig
+from hermes.config import ContainerSecurityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def build_container_config(
 
     Args:
         config: Security configuration from main config
-        image: Docker image name (e.g., 'sandtrap-target-ubuntu:latest')
+        image: Docker image name (e.g., 'hermes-target-ubuntu:latest')
         name: Container name
         session_id: Optional session ID for labeling
 
@@ -62,12 +62,12 @@ def build_container_config(
 
     # Build labels for tracking and identification
     labels = {
-        "sandtrap.role": "target",
-        "sandtrap.version": "mvp",
-        "sandtrap.created": datetime.utcnow().isoformat(),
+        "hermes.role": "target",
+        "hermes.version": "mvp",
+        "hermes.created": datetime.utcnow().isoformat(),
     }
     if session_id:
-        labels["sandtrap.session_id"] = session_id
+        labels["hermes.session_id"] = session_id
 
     # Build complete container configuration
     container_config = {

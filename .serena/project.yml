@@ -87,7 +87,7 @@ initial_prompt: "Read and follow the instructions in AGENTS.md located in the pr
   root. This file contains project-specific workflow guidelines, memory loading instructions,
   and development conventions."
 # the name by which the project can be referenced within Serena
-project_name: "sandtrap"
+project_name: "hermes"
 
 # list of tools to include that would otherwise be disabled (particularly optional tools that are disabled by default)
 included_optional_tools: []

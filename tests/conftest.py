@@ -5,7 +5,7 @@ Pytest configuration and fixtures for SandTrap tests.
 import pytest
 from pathlib import Path
 
-from sandtrap.config import Config
+from hermes.config import Config
 
 
 @pytest.fixture

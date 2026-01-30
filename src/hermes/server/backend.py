@@ -1,5 +1,5 @@
 """
-Abstract SSH backend interface for SandTrap.
+Abstract SSH backend interface for Hermes.
 
 This module defines the interface that all SSH backend implementations must follow,
 allowing easy swapping of SSH libraries (e.g., asyncssh, paramiko) if needed.
@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from sandtrap.config import Config
+from hermes.config import Config
 
 
 @dataclass
@@ -39,7 +39,7 @@ class SSHBackend(ABC):
     """
     Abstract base class for SSH server backends.
 
-    This interface allows SandTrap to use different SSH libraries
+    This interface allows Hermes to use different SSH libraries
     while maintaining a consistent internal API.
     """
 
@@ -48,7 +48,7 @@ class SSHBackend(ABC):
         Initialize the SSH backend.
 
         Args:
-            config: SandTrap configuration
+            config: Hermes configuration
         """
         self.config = config
 

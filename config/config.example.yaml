@@ -1,4 +1,4 @@
-# SandTrap Configuration Example
+# Hermes Configuration Example
 # Copy this file to config.yaml and customize for your deployment
 
 # SSH Server Configuration
@@ -51,7 +51,7 @@ container_pool:
   spawn_timeout: 30
   
   # Target container image (must be built separately)
-  image: "sandtrap-target-ubuntu:latest"
+  image: "hermes-target-ubuntu:latest"
   
   # Maximum session duration before auto-disconnect (seconds)
   max_session_duration: 3600

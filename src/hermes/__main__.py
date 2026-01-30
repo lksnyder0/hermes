@@ -1,5 +1,5 @@
 """
-SandTrap entry point.
+Hermes entry point.
 
 This module provides the main() function that starts the SSH honeypot server.
 """
@@ -13,13 +13,13 @@ from typing import Optional
 
 import docker
 
-from sandtrap import __version__
-from sandtrap.config import Config
-from sandtrap.container.pool import ContainerPool
-from sandtrap.server.asyncssh_backend import AsyncSSHBackend
-from sandtrap.server.backend import PTYRequest, SessionInfo
-from sandtrap.session.proxy import ContainerProxy
-from sandtrap.session.recorder import SessionRecorder
+from hermes import __version__
+from hermes.config import Config
+from hermes.container.pool import ContainerPool
+from hermes.server.asyncssh_backend import AsyncSSHBackend
+from hermes.server.backend import PTYRequest, SessionInfo
+from hermes.session.proxy import ContainerProxy
+from hermes.session.recorder import SessionRecorder
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -34,14 +34,14 @@ def setup_logging(level: str = "INFO") -> None:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="SandTrap - SSH Honeypot with Docker Container Sandboxing",
+        description="Hermes - SSH Honeypot with Docker Container Sandboxing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
         "--version",
         action="version",
-        version=f"SandTrap {__version__}",
+        version=f"Hermes {__version__}",
     )
 
     parser.add_argument(
@@ -182,7 +182,7 @@ async def async_main(config_path: Path) -> int:
         logger.info(f"Loading configuration from {config_path}")
         config = Config.from_file(config_path)
 
-        logger.info("SandTrap starting...")
+        logger.info("Hermes starting...")
         logger.info(f"SSH Server: {config.server.host}:{config.server.port}")
         logger.info(f"Host Key: {config.server.host_key_path}")
         logger.info(f"Container pool size: {config.container_pool.size}")
@@ -228,7 +228,7 @@ async def async_main(config_path: Path) -> int:
         logger.info("Starting SSH server...")
         await ssh_backend.start()
 
-        logger.info("SandTrap is running! Press Ctrl+C to stop.")
+        logger.info("Hermes is running! Press Ctrl+C to stop.")
 
         # Keep running until interrupted
         try:
@@ -270,7 +270,7 @@ async def async_main(config_path: Path) -> int:
 
 def main() -> int:
     """
-    Main entry point for SandTrap.
+    Main entry point for Hermes.
 
     Returns:
         Exit code (0 for success, non-zero for error)
@@ -279,7 +279,7 @@ def main() -> int:
     setup_logging(args.log_level)
 
     logger = logging.getLogger(__name__)
-    logger.info(f"SandTrap v{__version__}")
+    logger.info(f"Hermes v{__version__}")
 
     # Handle special commands
     if args.generate_keys:

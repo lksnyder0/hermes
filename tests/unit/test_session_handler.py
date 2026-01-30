@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandtrap.__main__ import container_session_handler
-from sandtrap.server.backend import PTYRequest, SessionInfo
+from hermes.__main__ import container_session_handler
+from hermes.server.backend import PTYRequest, SessionInfo
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
@@ -71,7 +71,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
@@ -96,7 +96,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
@@ -116,7 +116,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
@@ -163,7 +163,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             proxy_instance.start.side_effect = RuntimeError("exec failed")
@@ -183,7 +183,7 @@ class TestContainerSessionHandler:
         mock_pool.allocate.return_value = mock_container
 
         with patch(
-            "sandtrap.__main__.ContainerProxy"
+            "hermes.__main__.ContainerProxy"
         ) as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance

@@ -1,5 +1,5 @@
 """
-Authentication manager for SandTrap.
+Authentication manager for Hermes.
 
 Handles validation of credentials against configured static credentials
 and implements accept-all mode after N failed attempts.
@@ -8,7 +8,7 @@ and implements accept-all mode after N failed attempts.
 import logging
 from typing import Dict
 
-from sandtrap.config import AuthenticationConfig
+from hermes.config import AuthenticationConfig
 
 logger = logging.getLogger(__name__)
 

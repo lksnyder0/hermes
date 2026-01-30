@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandtrap.server.asyncssh_backend import AsyncSSHBackend, SandTrapSSHServer
-from sandtrap.server.backend import PTYRequest, SessionInfo
+from hermes.server.asyncssh_backend import AsyncSSHBackend, HermesSSHServer
+from hermes.server.backend import PTYRequest, SessionInfo
 
 
 @pytest.fixture
@@ -227,8 +227,8 @@ class TestProcessFactory:
         assert pty_req.pixel_height == 800
 
 
-class TestSandTrapSSHServer:
-    """Tests for the SandTrapSSHServer connection and auth callbacks."""
+class TestHermesSSHServer:
+    """Tests for the HermesSSHServer connection and auth callbacks."""
 
     @pytest.fixture
     def auth_manager(self):
@@ -236,7 +236,7 @@ class TestSandTrapSSHServer:
 
     @pytest.fixture
     def server(self, auth_manager, backend):
-        return SandTrapSSHServer(auth_manager, session_handler=None, backend=backend)
+        return HermesSSHServer(auth_manager, session_handler=None, backend=backend)
 
     def test_connection_made_stores_session_info(self, server, backend):
         conn = MagicMock()
@@ -336,7 +336,7 @@ class TestAsyncSSHBackendStart:
     @pytest.mark.asyncio
     async def test_start_uses_process_factory(self, backend):
         """Verify asyncssh.listen is called with process_factory, not session_factory."""
-        with patch("sandtrap.server.asyncssh_backend.asyncssh.listen", new_callable=AsyncMock) as mock_listen:
+        with patch("hermes.server.asyncssh_backend.asyncssh.listen", new_callable=AsyncMock) as mock_listen:
             mock_listen.return_value = MagicMock()
             await backend.start()
 

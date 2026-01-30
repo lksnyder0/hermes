@@ -1,16 +1,16 @@
-# SandTrap - AI Assistant Instructions
+# Hermes - AI Assistant Instructions
 
 **SSH Honeypot with Docker Container Sandboxing**
 
-Repository: https://github.com/lksnyder0/sandtrap
+Repository: https://github.com/lksnyder0/hermes
 
 ---
 
 ## Getting Started
 
 **REQUIRED**: Read these memory files for full project context:
-1. `.serena/memories/sandtrap-mvp-implementation-plan.md` - Implementation roadmap and current status
-2. `.serena/memories/sandtrap-project-specifications.md` - Project specifications and technical decisions
+1. `.serena/memories/hermes-progress.md` - Implementation roadmap and current status
+2. `.serena/memories/hermes-project-specifications.md` - Project specifications and technical decisions
 
 ---
 
@@ -88,16 +88,16 @@ Unit tests, security constraint verification, integration tests for SSH→Contai
 ## Key Commands
 
 ```bash
-# Run SandTrap (from src/)
+# Run Hermes (from src/)
 source ../venv/bin/activate
-python -m sandtrap --config ../config/config.test.yaml
+python -m hermes --config ../config/config.test.yaml
 
 # Tests
 pytest
-pytest --cov=sandtrap
+pytest --cov=hermes
 
 # Docker
-docker buildx build -t sandtrap-target-ubuntu:latest containers/targets/ubuntu/
+docker buildx build -t hermes-target-ubuntu:latest containers/targets/ubuntu/
 docker inspect <container-id>  # Verify security constraints
 
 # Git (only when user requests)
@@ -112,15 +112,15 @@ git push origin main
 
 - **Docker SDK**: `container.stop()` takes no timeout argument; omit `seccomp=default` (Docker applies automatically)
 - **Config paths**: Use absolute paths for SSH keys (not relative); project root != working directory
-- **Container naming**: `sandtrap-target-{session_id[:8]}-{timestamp}`
+- **Container naming**: `hermes-target-{session_id[:8]}-{timestamp}`
 - **Security constraints**: Network=none, 256MB RAM, 0.5 CPU, 100 PIDs, minimal capabilities (see memories for details)
-- **Virtual env**: `/home/luke/code/sandtrap/venv`, Python 3.14+
+- **Virtual env**: `/home/luke/code/hermes/venv`, Python 3.14+
 
 ---
 
 ## Git Workflow
 
-**Repository**: `git@github.com:lksnyder0/sandtrap.git` (branch: `main`)
+**Repository**: `git@github.com:lksnyder0/hermes.git` (branch: `main`)
 
 **Commit format**: `Phase N complete: Brief description`
 
@@ -133,8 +133,8 @@ git push origin main
 ## Project Structure
 
 ```
-sandtrap/
-├── src/sandtrap/          # Python source
+hermes/
+├── src/hermes/          # Python source
 │   ├── __main__.py        # Entry point
 │   ├── config.py          # Configuration
 │   ├── server/            # SSH server
