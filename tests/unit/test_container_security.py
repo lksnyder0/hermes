@@ -4,8 +4,8 @@ Unit tests for container security configuration builder.
 
 import pytest
 
-from sandtrap.config import ContainerSecurityConfig
-from sandtrap.container.security import (
+from hermes.config import ContainerSecurityConfig
+from hermes.container.security import (
     build_container_config,
     format_cpu_quota,
     parse_memory_limit,
@@ -91,15 +91,15 @@ class TestBuildContainerConfig:
 
     def test_labels_include_role(self, security_config: ContainerSecurityConfig):
         result = build_container_config(security_config, "img", "n")
-        assert result["labels"]["sandtrap.role"] == "target"
+        assert result["labels"]["hermes.role"] == "target"
 
     def test_session_id_in_labels(self, security_config: ContainerSecurityConfig):
         result = build_container_config(security_config, "img", "n", session_id="sess-1")
-        assert result["labels"]["sandtrap.session_id"] == "sess-1"
+        assert result["labels"]["hermes.session_id"] == "sess-1"
 
     def test_no_session_id_label_when_none(self, security_config: ContainerSecurityConfig):
         result = build_container_config(security_config, "img", "n")
-        assert "sandtrap.session_id" not in result["labels"]
+        assert "hermes.session_id" not in result["labels"]
 
     def test_invalid_memory_limit_raises(self):
         config = ContainerSecurityConfig(memory_limit="bad")

@@ -4,8 +4,8 @@ Unit tests for AuthenticationManager.
 
 import pytest
 
-from sandtrap.config import AuthenticationConfig
-from sandtrap.server.auth import AuthenticationManager
+from hermes.config import AuthenticationConfig
+from hermes.server.auth import AuthenticationManager
 
 
 @pytest.fixture

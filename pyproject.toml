@@ -142,7 +142,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
-    "docker: marks tests requiring Docker (requires sandtrap-target-ubuntu image)",
+    "docker: marks tests requiring Docker (requires hermes-target-ubuntu image)",
 ]
 
 [tool.coverage.run]

@@ -34,7 +34,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest tests/unit/ -v --cov=sandtrap --cov-report=xml --cov-report=term-missing
+          pytest tests/unit/ -v --cov=hermes --cov-report=xml --cov-report=term-missing
 
       - name: Run mocked integration tests
         run: |
@@ -42,7 +42,7 @@ jobs:
                   tests/integration/test_config_loading.py \
                   tests/integration/test_container_pool_lifecycle.py \
                   tests/integration/test_session_flow.py \
-                  -v --cov=sandtrap --cov-append --cov-report=xml --cov-report=term-missing
+                  -v --cov=hermes --cov-append --cov-report=xml --cov-report=term-missing
 
       - name: Check coverage threshold (80%)
         run: |

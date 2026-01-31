@@ -1,4 +1,4 @@
-# Testing SandTrap
+# Testing Hermes
 
 This guide covers running the test suite, including unit tests, mocked integration tests, and real Docker integration tests.
 
@@ -6,7 +6,7 @@ This guide covers running the test suite, including unit tests, mocked integrati
 
 - **Unit tests** (`tests/unit/`): Fast, isolated tests with mocked dependencies. Run in CI pipelines. No external dependencies required.
 - **Mocked integration tests** (`tests/integration/test_*.py` except Docker): Component interaction tests with Docker mocked. Run in CI pipelines. No external dependencies required.
-- **Real Docker integration tests** (`tests/integration/test_*_docker.py`): End-to-end tests with real Docker containers. Run locally for verification. Requires Docker and `sandtrap-target-ubuntu:latest` image.
+- **Real Docker integration tests** (`tests/integration/test_*_docker.py`): End-to-end tests with real Docker containers. Run locally for verification. Requires Docker and `hermes-target-ubuntu:latest` image.
 
 ## Quick Start
 
@@ -34,7 +34,7 @@ pytest tests/integration/test_auth_backend_integration.py \
 ### Run with coverage report
 
 ```bash
-pytest tests/ --cov=sandtrap --cov-report=term-missing --cov-report=html
+pytest tests/ --cov=hermes --cov-report=term-missing --cov-report=html
 ```
 
 This generates an HTML coverage report at `htmlcov/index.html`.
@@ -43,14 +43,14 @@ This generates an HTML coverage report at `htmlcov/index.html`.
 
 These tests require:
 1. Docker daemon running
-2. `sandtrap-target-ubuntu:latest` image available
+2. `hermes-target-ubuntu:latest` image available
 
 ### Prerequisites
 
 Build the target image:
 
 ```bash
-docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
+docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
 ```
 
 Verify Docker is available:
@@ -111,7 +111,7 @@ pytest tests/unit/ tests/integration/test_auth_backend_integration.py \
         tests/integration/test_config_loading.py \
         tests/integration/test_container_pool_lifecycle.py \
         tests/integration/test_session_flow.py \
-        --cov=sandtrap --cov-report=term-missing
+        --cov=hermes --cov-report=term-missing
 ```
 
 ### Local Laptop (with Docker)
@@ -120,10 +120,10 @@ Run everything including real Docker tests:
 
 ```bash
 # Build the target image first
-docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
+docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
 
 # Run all tests
-pytest tests/ -v -m "not docker or docker" --cov=sandtrap
+pytest tests/ -v -m "not docker or docker" --cov=hermes
 
 # Or run Docker tests separately
 pytest tests/ -v --ignore=tests/integration/test_*_docker.py  # everything else
@@ -230,7 +230,7 @@ sudo systemctl start docker
 Build the target image:
 
 ```bash
-docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
+docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
 ```
 
 ### Tests hang or timeout
@@ -258,7 +258,7 @@ This may indicate Docker performance issues. Try:
 Run coverage report to identify uncovered lines:
 
 ```bash
-pytest tests/ --cov=sandtrap --cov-report=term-missing
+pytest tests/ --cov=hermes --cov-report=term-missing
 ```
 
 Look for lines marked with `0` in the report and add tests for those code paths.
@@ -316,11 +316,11 @@ async def test_my_feature(self, docker_client, target_image):
             tests/integration/test_config_loading.py \
             tests/integration/test_container_pool_lifecycle.py \
             tests/integration/test_session_flow.py \
-            --cov=sandtrap
+            --cov=hermes
 
 - name: Run Docker tests (optional)
   if: success()
   run: |
-    docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
+    docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
     pytest tests/integration/test_*_docker.py -v -m docker
 ```

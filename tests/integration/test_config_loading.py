@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from sandtrap.config import Config
-from sandtrap.container.security import build_container_config
-from sandtrap.server.auth import AuthenticationManager
+from hermes.config import Config
+from hermes.container.security import build_container_config
+from hermes.server.auth import AuthenticationManager
 
 
 class TestConfigToAuthManager:
@@ -67,7 +67,7 @@ class TestConfigToContainerSecurity:
             name="test-container",
         )
 
-        assert result["image"] == "sandtrap-target-ubuntu:latest"
+        assert result["image"] == "hermes-target-ubuntu:latest"
         assert result["network_mode"] == "none"
         assert result["mem_limit"] == "256m"
         assert result["cap_drop"] == ["ALL"]

@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sandtrap.config import ContainerPoolConfig
-from sandtrap.container.pool import ContainerPool
+from hermes.config import ContainerPoolConfig
+from hermes.container.pool import ContainerPool
 
 
 def _fake_container(cid: str = "abc123") -> MagicMock:

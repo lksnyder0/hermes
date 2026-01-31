@@ -4,7 +4,7 @@
 server:
   host: "0.0.0.0"
   port: 2223
-  host_key_path: "/home/luke/code/sandtrap/data/keys/ssh_host_rsa_key"
+  host_key_path: "/home/luke/code/hermes/data/keys/ssh_host_rsa_key"
   max_concurrent_sessions: 5
   session_timeout: 300  # 5 minutes for testing
 

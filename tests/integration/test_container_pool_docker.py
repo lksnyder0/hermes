@@ -1,15 +1,15 @@
 """
 Real Docker integration tests for ContainerPool.
 
-These tests require a real Docker daemon and the sandtrap-target-ubuntu image.
+These tests require a real Docker daemon and the hermes-target-ubuntu image.
 Run with: pytest tests/integration/test_container_pool_docker.py -v -m docker
 
 To ensure you have the required image:
-  docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
+  docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
 
 NOTE: These tests are designed to run in isolation or with adequate delays between
 test runs. If running multiple times rapidly, clean up Docker containers first:
-  docker container rm -f $(docker ps -aq --filter name=sandtrap)
+  docker container rm -f $(docker ps -aq --filter name=hermes)
 """
 
 import asyncio
@@ -18,8 +18,8 @@ from pathlib import Path
 import docker
 import pytest
 
-from sandtrap.config import ContainerPoolConfig
-from sandtrap.container.pool import ContainerPool
+from hermes.config import ContainerPoolConfig
+from hermes.container.pool import ContainerPool
 
 
 @pytest.fixture(scope="session")
@@ -36,7 +36,7 @@ def docker_client() -> docker.DockerClient:
 @pytest.fixture(scope="session")
 def target_image(docker_client: docker.DockerClient) -> str:
     """Ensure the target image exists."""
-    image_name = "sandtrap-target-ubuntu:latest"
+    image_name = "hermes-target-ubuntu:latest"
     try:
         docker_client.images.get(image_name)
         return image_name
@@ -55,7 +55,7 @@ class TestContainerPoolRealDocker:
     def pool_config(self, target_image: str) -> ContainerPoolConfig:
         # Use a smaller pool for Docker tests to avoid naming conflicts
         # Override security config to use valid Docker options
-        from sandtrap.config import ContainerSecurityConfig
+        from hermes.config import ContainerSecurityConfig
 
         config = ContainerPoolConfig(
             size=1,
@@ -82,7 +82,7 @@ class TestContainerPoolRealDocker:
             try:
                 containers = docker_client.containers.list(
                     all=True,
-                    filters={"name": "sandtrap-target-"},
+                    filters={"name": "hermes-target-"},
                 )
                 for c in containers:
                     try:
