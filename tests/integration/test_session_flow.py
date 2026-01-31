@@ -11,10 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandtrap.config import ContainerPoolConfig, RecordingConfig
-from sandtrap.container.pool import ContainerPool
-from sandtrap.server.backend import PTYRequest, SessionInfo
-from sandtrap.__main__ import container_session_handler
+from hermes.config import ContainerPoolConfig, RecordingConfig
+from hermes.container.pool import ContainerPool
+from hermes.server.backend import PTYRequest, SessionInfo
+from hermes.__main__ import container_session_handler
 
 
 def _mock_process() -> MagicMock:
@@ -80,7 +80,7 @@ class TestSessionHandlerWithRecorder:
         process = _mock_process()
 
         # Patch ContainerProxy to avoid real socket operations
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
 
@@ -112,7 +112,7 @@ class TestSessionHandlerWithRecorder:
         pool.allocate = AsyncMock(return_value=container)
         pool.release = AsyncMock()
 
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
 
@@ -165,7 +165,7 @@ class TestSessionHandlerErrorPaths:
         pool.allocate = AsyncMock(return_value=container)
         pool.release = AsyncMock()
 
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             proxy_instance.start.side_effect = RuntimeError("exec failed")
             MockProxy.return_value = proxy_instance
@@ -194,7 +194,7 @@ class TestSessionHandlerErrorPaths:
         pool.allocate = AsyncMock(return_value=container)
         pool.release = AsyncMock()
 
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             proxy_instance.start.side_effect = RuntimeError("boom")
             MockProxy.return_value = proxy_instance
@@ -224,7 +224,7 @@ class TestSessionHandlerMetadataFlow:
 
         session_info = _session_info()
 
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
 
@@ -252,7 +252,7 @@ class TestSessionHandlerMetadataFlow:
 
         pty = _pty_request()
 
-        with patch("sandtrap.__main__.ContainerProxy") as MockProxy:
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy_instance = AsyncMock()
             MockProxy.return_value = proxy_instance
 

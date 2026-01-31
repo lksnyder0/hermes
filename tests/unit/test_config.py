@@ -5,7 +5,7 @@ Unit tests for configuration loading and validation.
 import pytest
 from pathlib import Path
 
-from sandtrap.config import (
+from hermes.config import (
     AuthenticationConfig,
     Config,
     ContainerPoolConfig,
@@ -84,7 +84,7 @@ class TestContainerPoolConfig:
     def test_defaults(self):
         c = ContainerPoolConfig()
         assert c.size == 3
-        assert c.image == "sandtrap-target-ubuntu:latest"
+        assert c.image == "hermes-target-ubuntu:latest"
 
     def test_size_minimum(self):
         with pytest.raises(Exception):

@@ -8,8 +8,8 @@ callbacks and the authentication manager without mocking either component.
 import pytest
 from unittest.mock import MagicMock
 
-from sandtrap.config import AuthenticationConfig
-from sandtrap.server.auth import AuthenticationManager
+from hermes.config import AuthenticationConfig
+from hermes.server.auth import AuthenticationManager
 
 
 class TestAuthManagerMultiConnectionFlow:

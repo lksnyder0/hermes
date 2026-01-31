@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 import docker
 import pytest
 
-from sandtrap.config import RecordingConfig
-from sandtrap.server.backend import PTYRequest
-from sandtrap.session.proxy import ContainerProxy
+from hermes.config import RecordingConfig
+from hermes.server.backend import PTYRequest
+from hermes.session.proxy import ContainerProxy
 
 
 @pytest.fixture(scope="session")
@@ -30,7 +30,7 @@ def docker_client() -> docker.DockerClient:
 @pytest.fixture
 def target_image_name() -> str:
     """Target container image name."""
-    return "sandtrap-target-ubuntu:latest"
+    return "hermes-target-ubuntu:latest"
 
 
 @pytest.fixture
@@ -170,7 +170,7 @@ class TestContainerProxyRealDocker:
     @pytest.mark.asyncio
     async def test_proxy_with_recorder(self, test_container, tmp_path):
         """Proxy works with a SessionRecorder."""
-        from sandtrap.session.recorder import SessionRecorder
+        from hermes.session.recorder import SessionRecorder
 
         recording_config = RecordingConfig(
             enabled=True,

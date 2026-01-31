@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SandTrap is an SSH honeypot with Docker container sandboxing that captures attacker behavior. It accepts SSH connections, proxies them to isolated Ubuntu Docker containers, and records all activity.
+Hermes is an SSH honeypot with Docker container sandboxing that captures attacker behavior. It accepts SSH connections, proxies them to isolated Ubuntu Docker containers, and records all activity.
 
 **Stack**: Python 3.12+, asyncssh, Docker SDK, Pydantic, PyYAML
 
@@ -27,7 +27,7 @@ This project handles live attacker sessions. Code changes must never weaken secu
 ## Testing Standards
 
 - Framework: pytest with pytest-asyncio (asyncio_mode = "auto")
-- Coverage: `--cov=sandtrap` is enabled by default
+- Coverage: `--cov=hermes` is enabled by default
 - Test paths: `tests/unit/`, `tests/integration/`
 - Markers: `@pytest.mark.slow`, `@pytest.mark.integration`, `@pytest.mark.unit`
 
@@ -44,7 +44,7 @@ This project handles live attacker sessions. Code changes must never weaken secu
 ## Project Structure
 
 ```
-src/sandtrap/          # Source code
+src/hermes/          # Source code
   __main__.py          # Entry point
   config.py            # Pydantic configuration models
   server/              # SSH server (asyncssh backend, auth)
@@ -71,7 +71,7 @@ isort src/ tests/
 mypy src/
 
 # Build target container
-docker buildx build -t sandtrap-target-ubuntu:latest containers/targets/ubuntu/
+docker buildx build -t hermes-target-ubuntu:latest containers/targets/ubuntu/
 ```
 
 ## Code Review Focus Areas

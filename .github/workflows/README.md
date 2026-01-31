@@ -67,7 +67,7 @@ pytest tests/integration/test_auth_backend_integration.py \
         -v
 
 # Run with coverage
-pytest tests/ --cov=sandtrap --cov-report=term-missing --cov-report=html
+pytest tests/ --cov=hermes --cov-report=term-missing --cov-report=html
 
 # Check coverage threshold
 coverage report --fail-under=80
@@ -118,7 +118,7 @@ These can be run locally with: `pytest tests/integration/test_*_docker.py -v -m 
 ### Coverage below 80%
 Run coverage locally to identify gaps:
 ```bash
-pytest tests/ --cov=sandtrap --cov-report=term-missing
+pytest tests/ --cov=hermes --cov-report=term-missing
 ```
 
 Look for lines marked with `0` and add tests for those code paths.
@@ -126,8 +126,8 @@ Look for lines marked with `0` and add tests for those code paths.
 ### Docker tests failing
 See `TESTING.md` for Docker test setup:
 ```bash
-docker build -f docker/Dockerfile -t sandtrap-target-ubuntu:latest docker/
-docker container rm -f $(docker ps -aq --filter name=sandtrap)
+docker build -f docker/Dockerfile -t hermes-target-ubuntu:latest docker/
+docker container rm -f $(docker ps -aq --filter name=hermes)
 pytest tests/integration/test_*_docker.py -v -m docker
 ```
 

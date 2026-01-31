@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.12", "3.13"]
     permissions:
       contents: read
       pull-requests: write
@@ -34,7 +34,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest tests/unit/ -v --cov=sandtrap --cov-report=xml --cov-report=term-missing
+          pytest tests/unit/ -v --cov=hermes --cov-report=xml --cov-report=term-missing
 
       - name: Run mocked integration tests
         run: |
@@ -42,7 +42,7 @@ jobs:
                   tests/integration/test_config_loading.py \
                   tests/integration/test_container_pool_lifecycle.py \
                   tests/integration/test_session_flow.py \
-                  -v --cov=sandtrap --cov-append --cov-report=xml --cov-report=term-missing
+                  -v --cov=hermes --cov-append --cov-report=xml --cov-report=term-missing
 
       - name: Check coverage threshold (80%)
         run: |
@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
           flags: unittests
@@ -96,11 +96,11 @@ jobs:
 
     steps:
       - name: Download coverage
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: coverage-report
         continue-on-error: true
 
       - name: Publish coverage badge
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         continue-on-error: true

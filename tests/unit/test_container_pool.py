@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sandtrap.config import ContainerPoolConfig
-from sandtrap.container.pool import ContainerPool
+from hermes.config import ContainerPoolConfig
+from hermes.container.pool import ContainerPool
 
 
 def _mock_container(container_id: str = "abc123456789") -> MagicMock:
@@ -194,7 +194,7 @@ class TestContainerPoolSpawnReplacement:
 class TestContainerPoolHelpers:
     def test_generate_container_name_format(self, pool: ContainerPool):
         name = pool._generate_container_name()
-        assert name.startswith("sandtrap-target-")
+        assert name.startswith("hermes-target-")
 
     def test_generate_container_name_with_session_id(self, pool: ContainerPool):
         name = pool._generate_container_name("abcdefghij")

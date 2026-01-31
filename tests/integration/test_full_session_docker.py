@@ -12,17 +12,17 @@ from unittest.mock import AsyncMock, MagicMock
 import docker
 import pytest
 
-from sandtrap.config import (
+from hermes.config import (
     AuthenticationConfig,
     Config,
     ContainerPoolConfig,
     RecordingConfig,
 )
-from sandtrap.container.pool import ContainerPool
-from sandtrap.server.auth import AuthenticationManager
-from sandtrap.server.backend import PTYRequest, SessionInfo
-from sandtrap.session.proxy import ContainerProxy
-from sandtrap.session.recorder import SessionRecorder
+from hermes.container.pool import ContainerPool
+from hermes.server.auth import AuthenticationManager
+from hermes.server.backend import PTYRequest, SessionInfo
+from hermes.session.proxy import ContainerProxy
+from hermes.session.recorder import SessionRecorder
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +39,7 @@ def docker_client() -> docker.DockerClient:
 @pytest.fixture(scope="session")
 def target_image(docker_client: docker.DockerClient) -> str:
     """Ensure the target image exists."""
-    image_name = "sandtrap-target-ubuntu:latest"
+    image_name = "hermes-target-ubuntu:latest"
     try:
         docker_client.images.get(image_name)
         return image_name
@@ -87,7 +87,7 @@ class TestFullSessionWithRealDocker:
         try:
             containers = docker_client.containers.list(
                 all=True,
-                filters={"name": "sandtrap-target-"},
+                filters={"name": "hermes-target-"},
             )
             for c in containers:
                 try:

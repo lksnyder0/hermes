@@ -1,5 +1,5 @@
 """
-Pytest configuration and fixtures for SandTrap tests.
+Pytest configuration and fixtures for Hermes tests.
 """
 
 import pytest
