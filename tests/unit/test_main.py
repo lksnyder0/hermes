@@ -302,8 +302,7 @@ class TestMain:
                     generate_keys=True,
                 )
 
-                # Note: The current implementation returns 1, but we skip this path
-                # as per requirements since it raises NotImplementedError
+                # The generate-keys feature is not yet implemented and returns 1
                 result = main()
 
                 assert result == 1
@@ -328,23 +327,21 @@ class TestMain:
         with patch("hermes.__main__.parse_args") as mock_parse:
             with patch("hermes.__main__.setup_logging"):
                 with patch(
-                    "hermes.__main__.asyncio.run"
-                ) as mock_run:
+                    "hermes.__main__.async_main", new_callable=AsyncMock
+                ) as mock_async_main:
                     config_path = Path("/custom/config.yaml")
                     mock_parse.return_value = argparse.Namespace(
                         config=config_path,
                         log_level="INFO",
                         generate_keys=False,
                     )
-                    mock_run.return_value = 0
+                    mock_async_main.return_value = 0
 
-                    main()
+                    result = main()
 
-                    # Verify async_main was called with correct config path
-                    call_args = mock_run.call_args[0]
-                    # The first arg is the coroutine from async_main(config_path)
-                    # We verify it by checking the mock was invoked
-                    assert mock_run.called
+                    # Verify async_main was called with the correct config path
+                    mock_async_main.assert_called_once_with(config_path)
+                    assert result == 0
 
 
 # ============================================================================
