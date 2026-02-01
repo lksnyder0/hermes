@@ -155,6 +155,85 @@ class TestContainerProxyStop:
 
         await proxy.stop()  # Should not raise
 
+    @pytest.mark.asyncio
+    async def test_stop_with_completed_tasks(self, proxy):
+        """Stop should handle tasks that are already completed."""
+        proxy._running = True
+
+        # Create tasks that complete immediately
+        async def completed_task():
+            return
+
+        task1 = asyncio.create_task(completed_task())
+        task2 = asyncio.create_task(completed_task())
+
+        # Wait for tasks to complete
+        await asyncio.gather(task1, task2)
+
+        proxy.ssh_to_container_task = task1
+        proxy.container_to_ssh_task = task2
+        mock_socket = MagicMock()
+        proxy.exec_socket = mock_socket
+
+        await proxy.stop()
+
+        assert proxy._running is False
+        mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_without_socket(self, proxy):
+        """Stop should handle case when exec_socket is None."""
+        proxy._running = True
+        proxy.exec_socket = None
+
+        # Should not raise
+        await proxy.stop()
+
+        assert proxy._running is False
+
+    @pytest.mark.asyncio
+    async def test_stop_with_task_cancellation_error(self, proxy):
+        """Stop should handle CancelledError from task cancellation."""
+        proxy._running = True
+
+        async def long_running_task():
+            await asyncio.sleep(10)
+
+        task = asyncio.create_task(long_running_task())
+        proxy.ssh_to_container_task = task
+        proxy.container_to_ssh_task = None
+        mock_socket = MagicMock()
+        proxy.exec_socket = mock_socket
+
+        await proxy.stop()
+
+        assert proxy._running is False
+        mock_socket.close.assert_called_once()
+        assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_stop_multiple_socket_close_attempts(self, proxy):
+        """Stop should only attempt to close socket once."""
+        proxy._running = True
+        mock_socket = MagicMock()
+        proxy.exec_socket = mock_socket
+
+        await proxy.stop()
+
+        mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_with_type_error_on_socket_close(self, proxy):
+        """Stop should handle unexpected error types on socket close."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+        proxy.exec_socket.close.side_effect = TypeError("unexpected type error")
+
+        # Should not raise
+        await proxy.stop()
+
+        assert proxy._running is False
+
 
 class TestContainerProxyResize:
     """Tests for terminal resize handling."""
@@ -207,6 +286,59 @@ class TestSSHToContainer:
 
         assert proxy._shutdown_event.is_set()
 
+    @pytest.mark.asyncio
+    async def test_blocking_io_error_with_retry(self, proxy, mock_process):
+        """BlockingIOError during write should retry after sleep."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        read_count = [0]
+        sendall_count = [0]
+
+        async def read_data(size):
+            read_count[0] += 1
+            if read_count[0] == 1:
+                return b"data"
+            return b""  # EOF after first read
+
+        async def sendall_with_retry(sock, data):
+            sendall_count[0] += 1
+            if sendall_count[0] == 1:
+                raise BlockingIOError("Resource temporarily unavailable")
+            # Second call succeeds
+
+        mock_process.stdin.read = read_data
+
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "sock_sendall", side_effect=sendall_with_retry):
+            await proxy._ssh_to_container()
+
+        # Verify retry happened (called twice)
+        assert sendall_count[0] == 2
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_connection_reset_error_sets_shutdown(self, proxy, mock_process):
+        """ConnectionResetError should set shutdown event gracefully."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+        mock_process.stdin.read = AsyncMock(side_effect=ConnectionResetError("reset"))
+
+        await proxy._ssh_to_container()
+
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_in_ssh_to_container(self, proxy, mock_process):
+        """Generic exception should set shutdown event and log."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+        mock_process.stdin.read = AsyncMock(side_effect=RuntimeError("unexpected"))
+
+        await proxy._ssh_to_container()
+
+        assert proxy._shutdown_event.is_set()
+
 
 class TestContainerToSSH:
     """Tests for the _container_to_ssh streaming task."""
@@ -243,6 +375,92 @@ class TestContainerToSSH:
             await proxy._container_to_ssh()
 
         mock_process.stdout.write.assert_called_with(b"hello from container")
+
+    @pytest.mark.asyncio
+    async def test_blocking_io_error_with_continue(self, proxy, mock_process):
+        """BlockingIOError during read should continue to retry."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        call_count = [0]
+
+        async def recv_with_blocking_io(sock, size):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise BlockingIOError("Resource temporarily unavailable")
+            elif call_count[0] == 2:
+                return b"data after retry"
+            return b""
+
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "sock_recv", side_effect=recv_with_blocking_io):
+            await proxy._container_to_ssh()
+
+        # Verify data was written after retry
+        mock_process.stdout.write.assert_called_with(b"data after retry")
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_connection_reset_error_in_container_to_ssh(self, proxy, mock_process):
+        """ConnectionResetError in container stream should set shutdown."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        loop = asyncio.get_event_loop()
+        with patch.object(
+            loop, "sock_recv", side_effect=ConnectionResetError("reset by peer")
+        ):
+            await proxy._container_to_ssh()
+
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_broken_pipe_error_in_container_to_ssh(self, proxy, mock_process):
+        """BrokenPipeError in container stream should set shutdown."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        loop = asyncio.get_event_loop()
+        with patch.object(
+            loop, "sock_recv", side_effect=BrokenPipeError("pipe closed")
+        ):
+            await proxy._container_to_ssh()
+
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_in_container_to_ssh(self, proxy, mock_process):
+        """Generic exception should set shutdown event and log."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        loop = asyncio.get_event_loop()
+        with patch.object(
+            loop, "sock_recv", side_effect=RuntimeError("unexpected error")
+        ):
+            await proxy._container_to_ssh()
+
+        assert proxy._shutdown_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_stdout_drain_called(self, proxy, mock_process):
+        """stdout.drain() should be called after writing data."""
+        proxy._running = True
+        proxy.exec_socket = MagicMock()
+
+        call_count = [0]
+
+        async def fake_recv(sock, size):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return b"test data"
+            return b""
+
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "sock_recv", side_effect=fake_recv):
+            await proxy._container_to_ssh()
+
+        mock_process.stdout.drain.assert_called_once()
 
 
 class TestContainerProxyRecorder:
