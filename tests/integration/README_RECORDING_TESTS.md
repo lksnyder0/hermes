@@ -143,7 +143,7 @@ Sends SSH command and reads output until idle.
 - **Interleaving** is correct (input → output → input → output)
 
 ### 3. Timing Accuracy
-- Timestamps start at 0.0
+- Timestamps are non-negative and relative to session start
 - Timestamps are monotonically increasing
 - Elapsed time is realistic (not negative, not huge jumps)
 
