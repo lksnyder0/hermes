@@ -129,9 +129,9 @@ async def _start_hermes_server(
     }
 
     with open(config_path, "w") as f:
-        yaml.dump(test_config, f)
+        yaml.safe_dump(test_config, f, sort_keys=False)
 
-    # Generate SSH host key
+    # Generate SSH host key (ed25519 is modern and secure)
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     host_key.write_private_key(str(tmp_path / "test_host_key"))
 
@@ -932,7 +932,6 @@ class TestRecordingValidation:
             username="root",
             password="toor",
             known_hosts=None,
-            server_host_key_algs=["ssh-rsa"],
         ) as conn1:
             _, process1 = await conn1.create_session(
                 asyncssh.SSHClientProcess,
@@ -948,7 +947,6 @@ class TestRecordingValidation:
                 username="admin",
                 password="admin123",
                 known_hosts=None,
-                server_host_key_algs=["ssh-rsa"],
             ) as conn2:
                 _, process2 = await conn2.create_session(
                     asyncssh.SSHClientProcess,
@@ -1035,7 +1033,7 @@ class TestRecordingValidation:
         # Assert: .json metadata file exists
         json_files = await await_metadata_files(recordings_dir)
         json_path = max(json_files, key=lambda p: p.stat().st_mtime)
-        with open(json_path) as f:
+        with open(json_path, encoding="utf-8") as f:
             metadata = json.load(f)
 
         # Assert: metadata has expected fields

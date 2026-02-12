@@ -96,7 +96,7 @@ pytest tests/integration/test_recording_validation.py -v
 - Connects to Hermes via SSH (asyncssh)
 - Opens interactive PTY session (80x24)
 - **Scope**: function
-- **Yields**: `(connection, process)` tuple
+- **Yields**: `(connection, process, channel)` tuple
 - **Cleanup**: Closes SSH connection
 
 ### Helper Functions
