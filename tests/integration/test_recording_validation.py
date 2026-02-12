@@ -193,15 +193,19 @@ async def _start_hermes_server(
             hermes_process.kill()
             hermes_process.wait()
 
-        # Clean up any leftover containers
+        # Clean up any leftover containers (create fresh client for cleanup)
         try:
-            for container in docker_client.containers.list(
-                all=True, filters={"name": "hermes-target"}
-            ):
-                try:
-                    container.remove(force=True)
-                except Exception:
-                    pass
+            cleanup_client = docker.from_env()
+            try:
+                for container in cleanup_client.containers.list(
+                    all=True, filters={"name": "hermes-target"}
+                ):
+                    try:
+                        container.remove(force=True)
+                    except Exception:
+                        pass
+            finally:
+                cleanup_client.close()
         except Exception:
             pass
 
