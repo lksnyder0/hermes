@@ -44,11 +44,9 @@ def test_container(docker_client: docker.DockerClient, target_image_name: str):
     container = docker_client.containers.create(
         target_image_name,
         stdin_open=True,
-        stdout=True,
-        stderr=True,
         detach=True,
         user="root",
-        workdir="/root",
+        working_dir="/root",
     )
     container.start()
 

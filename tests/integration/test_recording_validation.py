@@ -16,6 +16,7 @@ Requires:
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -130,18 +131,17 @@ async def ssh_hermes_server(
     
     # Start Hermes server
     hermes_process = subprocess.Popen(
-        ["python", "-m", "hermes", "--config", str(config_path)],
+        [sys.executable, "-m", "hermes", "--config", str(config_path)],
         cwd=str(Path(__file__).parent.parent.parent / "src"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    
+
     # Wait for server to be ready
     max_wait = 15  # seconds
     start_time = time.time()
     server_ready = False
-    
+
     while time.time() - start_time < max_wait:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -153,11 +153,11 @@ async def ssh_hermes_server(
         except Exception:
             pass
         await asyncio.sleep(0.2)
-    
+
     if not server_ready:
         hermes_process.kill()
-        stdout, stderr = hermes_process.communicate(timeout=5)
-        pytest.skip(f"Hermes server failed to start on {host}:{port}\nStdout: {stdout}\nStderr: {stderr}")
+        hermes_process.wait(timeout=5)
+        pytest.skip(f"Hermes server failed to start on {host}:{port}")
     
     # Give it a moment to fully initialize
     await asyncio.sleep(0.5)
@@ -198,7 +198,8 @@ async def ssh_connected_session(
         pytest.skip if connection fails
     """
     host, port = ssh_hermes_server
-    
+    conn = None
+
     try:
         # Connect to Hermes SSH server
         conn = await asyncssh.connect(
@@ -232,11 +233,12 @@ async def ssh_connected_session(
     except Exception as e:
         pytest.skip(f"Failed to connect to Hermes server: {e}")
     finally:
-        try:
-            conn.close()
-            await conn.wait_closed()
-        except Exception:
-            pass
+        if conn is not None:
+            try:
+                conn.close()
+                await conn.wait_closed()
+            except Exception:
+                pass
 
 
 @pytest.fixture(scope="function")
@@ -330,18 +332,17 @@ async def ssh_hermes_server_no_recording(
     
     # Start Hermes server
     hermes_process = subprocess.Popen(
-        ["python", "-m", "hermes", "--config", str(config_path)],
+        [sys.executable, "-m", "hermes", "--config", str(config_path)],
         cwd=str(Path(__file__).parent.parent.parent / "src"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    
+
     # Wait for server to be ready
     max_wait = 15
     start_time = time.time()
     server_ready = False
-    
+
     while time.time() - start_time < max_wait:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -353,11 +354,11 @@ async def ssh_hermes_server_no_recording(
         except Exception:
             pass
         await asyncio.sleep(0.2)
-    
+
     if not server_ready:
         hermes_process.kill()
-        stdout, stderr = hermes_process.communicate(timeout=5)
-        pytest.skip(f"Hermes server failed to start on {host}:{port}\nStdout: {stdout}\nStderr: {stderr}")
+        hermes_process.wait(timeout=5)
+        pytest.skip(f"Hermes server failed to start on {host}:{port}")
     
     await asyncio.sleep(0.5)
     
@@ -382,34 +383,6 @@ async def ssh_hermes_server_no_recording(
         except Exception:
             pass
 
-
-@pytest.fixture(scope="function")
-async def recording_files(
-    ssh_hermes_server: Tuple[str, int], recording_config: RecordingConfig
-) -> AsyncGenerator[Tuple[Path, str], None]:
-    """
-    Track recording files and session_id during a test.
-
-    Yields:
-        (recordings_dir, session_id)
-
-    Expected usage:
-        async def test_something(recording_files):
-            recordings_dir, session_id = recording_files
-            # recordings_dir has .cast and .json files after session
-    """
-    recordings_dir = recording_config.output_dir
-    
-    # Get list of existing .cast files before test
-    recordings_dir.mkdir(parents=True, exist_ok=True)
-    existing_files = set(recordings_dir.glob("*.cast"))
-    
-    # Yield control to test (session will be created)
-    # We'll determine session_id by finding new .cast files after
-    yield recordings_dir, None  # session_id will be determined later
-    
-    # After test, find the new .cast file
-    # Note: This is a simplified approach. In practice, tests will find files themselves.
 
 
 # ============================================================================
@@ -529,36 +502,47 @@ def extract_input_events(events: list) -> list:
 
 
 async def send_command(
-    process: asyncssh.SSHServerProcess, cmd: str, timeout: float = 5.0
+    process: asyncssh.SSHClientProcess, cmd: str, timeout: float = 5.0
 ) -> bytes:
     """
     Send SSH command and read output until idle or timeout.
 
     Args:
-        process: SSHServerProcess from SSH connection
+        process: SSHClientProcess from SSH connection
         cmd: Command to send (with newline)
-        timeout: Seconds of silence before returning
+        timeout: Maximum total time to wait for output in seconds
+            (per-read idle cutoff remains at 0.5s)
 
     Returns:
         All output bytes received
     """
     # Send command
     process.stdin.write(cmd.encode())
-    
-    # Read until idle (optimized for faster tests)
+
+    # Read until idle (optimized for faster tests) or overall timeout
     buf = bytearray()
     idle_timeout = 0.5  # 500ms of silence = done (reduced from 1.0s)
-    
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+
     while True:
+        elapsed = loop.time() - start
+        remaining = timeout - elapsed
+        if remaining <= 0:
+            break
+
         try:
-            data = await asyncio.wait_for(process.stdout.read(4096), timeout=idle_timeout)
+            read_timeout = min(idle_timeout, remaining)
+            data = await asyncio.wait_for(
+                process.stdout.read(4096), timeout=read_timeout
+            )
             if not data:
                 break
             buf.extend(data)
         except asyncio.TimeoutError:
             # No data for idle_timeout seconds, consider complete
             break
-    
+
     return bytes(buf)
 
 
@@ -591,6 +575,8 @@ def assert_json_file_exists(path: Path, session_id: str) -> dict:
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.recording
+@pytest.mark.ssh
+@pytest.mark.docker
 class TestRecordingValidation:
     """Integration tests for session recording with real SSH sessions."""
 
@@ -772,12 +758,12 @@ class TestRecordingValidation:
         Validate large output (>10KB) is captured completely.
 
         Scenario:
-            1. Send: cat /etc/hostname (small but verifiable)
+            1. Send: seq 1 3000 (deterministically generates ~14KB)
             2. Read output
             3. Exit
 
         Expected .cast:
-            - All output captured
+            - All output captured (>10KB)
             - .cast file size reasonable (not truncated)
             - Output events contain full data
         """
@@ -785,17 +771,17 @@ class TestRecordingValidation:
         recordings_dir = recording_config.output_dir
 
         # Arrange
-        # Use a command that generates moderate output
-        large_cmd = "head -100 /etc/hostname; ls -la /root | head -50\n"
+        # seq 1 3000 outputs numbers 1-3000, one per line (~14KB)
+        large_cmd = "seq 1 3000\n"
 
         # Act: send command with large output
-        output = await send_command(process, large_cmd, timeout=5.0)
-        assert len(output) > 100, f"Output too small to test: {len(output)} bytes"
+        output = await send_command(process, large_cmd, timeout=10.0)
+        assert len(output) > 10000, f"Output too small to test: {len(output)} bytes (need >10KB)"
 
         # Act: exit
         process.stdin.write(b"exit\n")
-        await asyncio.sleep(0.2)  # Optimized
-        
+        await asyncio.sleep(0.2)
+
         conn.close()
         await conn.wait_closed()
 
@@ -803,7 +789,7 @@ class TestRecordingValidation:
         cast_files = list(recordings_dir.glob("*.cast"))
         assert len(cast_files) >= 1
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
-        
+
         cast = parse_cast_file(cast_path)
 
         # Assert: file not truncated (should have many events)
@@ -814,11 +800,12 @@ class TestRecordingValidation:
         cast_size = cast_path.stat().st_size
         assert cast_size < 1000000, f".cast file too large: {cast_size} bytes (>1MB)"
 
-        # Assert: combined output contains what we sent
+        # Assert: combined output exceeds 10KB
         output_events = extract_output_events(events)
         combined = "".join(output_events)
-        assert len(combined) > 50, "Combined output should be substantial"
+        assert len(combined) > 10000, f"Combined output should be >10KB, got {len(combined)} bytes"
 
+    @pytest.mark.xfail(reason="Resize event capture is environment-dependent")
     async def test_terminal_resize_events(
         self,
         ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
@@ -848,12 +835,9 @@ class TestRecordingValidation:
         # Act: send initial command
         output1 = await send_command(process, "echo initial\n", timeout=2.0)
 
-        # Act: attempt resize (may not be supported in all modes)
-        try:
-            conn.set_terminal_size(120, 40)
-            await asyncio.sleep(0.1)
-        except Exception:
-            pytest.skip("Terminal resize not supported by this session")
+        # Act: attempt resize
+        conn.set_terminal_size(120, 40)
+        await asyncio.sleep(0.1)
 
         # Act: send command after resize
         output2 = await send_command(process, "echo resized\n", timeout=2.0)
@@ -878,6 +862,15 @@ class TestRecordingValidation:
 
         # Assert: timestamps monotonic (resize events included)
         validate_events_monotonic(events)
+
+        # Assert: at least one resize event with correct format
+        resize_events = [e for e in events if e[1] == "r"]
+        assert len(resize_events) >= 1, "Expected at least one resize ('r') event"
+        for ts, etype, payload in resize_events:
+            assert isinstance(payload, str), f"Resize payload should be a string, got {type(payload)}"
+            parts = payload.split("x")
+            assert len(parts) == 2, f"Resize payload should be 'WIDTHxHEIGHT', got '{payload}'"
+            assert all(p.isdigit() for p in parts), f"Resize dimensions should be numeric, got '{payload}'"
 
     async def test_rapid_commands(
         self,
@@ -957,7 +950,8 @@ class TestRecordingValidation:
 
         # Act: Connect session 1
         async with asyncssh.connect(
-            host, port=port, username="root", password="toor", known_hosts=None
+            host, port=port, username="root", password="toor", known_hosts=None,
+            server_host_key_algs=['ssh-rsa'],
         ) as conn1:
             _, process1 = await conn1.create_session(
                 asyncssh.SSHClientProcess,
@@ -968,7 +962,8 @@ class TestRecordingValidation:
 
             # Act: Connect session 2
             async with asyncssh.connect(
-                host, port=port, username="admin", password="admin123", known_hosts=None
+                host, port=port, username="admin", password="admin123", known_hosts=None,
+                server_host_key_algs=['ssh-rsa'],
             ) as conn2:
                 _, process2 = await conn2.create_session(
                     asyncssh.SSHClientProcess,
@@ -1137,13 +1132,9 @@ class TestRecordingValidation:
         # Act: send command
         output = await send_command(process, "echo test\n")
 
-        # Act: force disconnect (simulate container crash)
-        # Note: This may not cleanly disconnect container, just close the session
-        process.stdin.write(b"exit\n")
+        # Act: force disconnect (simulate container crash / network drop)
+        conn.abort()
         await asyncio.sleep(0.5)
-        
-        conn.close()
-        await conn.wait_closed()
 
         # Assert: .cast file exists even after disconnect
         cast_files = list(recordings_dir.glob("*.cast"))

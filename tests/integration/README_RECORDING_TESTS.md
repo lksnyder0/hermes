@@ -12,14 +12,14 @@ Integration tests that validate session recording functionality using **real SSH
 | `test_multiple_commands` | Multiple commands with correct event interleaving | ✅ Pass |
 | `test_unicode_handling` | Unicode and emoji preservation in recordings | ✅ Pass |
 | `test_large_output` | Large output handling (>10KB) | ✅ Pass |
-| `test_terminal_resize_events` | Terminal resize event recording | ⏭️ Skip (not supported) |
+| `test_terminal_resize_events` | Terminal resize event recording | ⚠️ xfail (environment-dependent) |
 | `test_rapid_commands` | Rapid-fire commands without data loss | ✅ Pass |
 | `test_concurrent_sessions_recording` | Multiple simultaneous sessions isolated | ✅ Pass |
 | `test_metadata_sidecar` | JSON metadata sidecar file creation | ✅ Pass |
-| `test_recording_disabled_config` | Verify no recording when disabled | ⏭️ Skip (TODO) |
+| `test_recording_disabled_config` | Verify no recording when disabled | ✅ Pass |
 | `test_error_mid_session_partial_recording` | Partial recording remains valid | ✅ Pass |
 
-**Total: 8 passing, 2 skipped**
+**Total: 9 passing, 1 xfail (environment-dependent)**
 
 ## Prerequisites
 
@@ -162,7 +162,7 @@ Sends SSH command and reads output until idle.
 
 ### Typical Execution Time
 - **Single test**: ~2-4 seconds
-- **Full suite (8 tests)**: ~25-30 seconds
+- **Full suite (10 tests)**: ~25-30 seconds
 
 ### Performance Optimizations
 - Reduced sleep times (0.2s instead of 0.5s)
@@ -203,19 +203,10 @@ docker ps -a --filter "name=hermes-target" -q | xargs -r docker rm -f
 
 ## Known Issues
 
-### test_recording_disabled_config (Skipped)
-**Issue**: Test requires separate server fixture with recording disabled.
+### test_terminal_resize_events (xfail)
+**Issue**: Terminal resize event capture is environment-dependent. The resize may not propagate through the Docker exec PTY in all environments.
 
-**Current Behavior**: Uses `ssh_connected_session` which starts server with recording enabled.
-
-**Solution**: Create dedicated fixture for disabled recording server.
-
-**Workaround**: Test is skipped with TODO marker.
-
-### test_terminal_resize_events (Skipped)
-**Issue**: Terminal resize not fully supported in current Docker exec implementation.
-
-**Expected**: This is a known limitation, not a bug.
+**Current Behavior**: Marked `xfail` — the test runs and asserts that resize (`"r"`) events exist with valid format. It is expected to fail in environments where resize capture is not supported.
 
 **Future**: May be supported with SIGWINCH forwarding.
 
