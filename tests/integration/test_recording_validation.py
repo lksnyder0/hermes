@@ -132,7 +132,7 @@ async def _start_hermes_server(
         yaml.dump(test_config, f)
 
     # Generate SSH host key
-    host_key = asyncssh.generate_private_key("ssh-rsa")
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
     host_key.write_private_key(str(tmp_path / "test_host_key"))
 
     # Create log files for server output
