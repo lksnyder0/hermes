@@ -17,14 +17,13 @@ Requires:
 import asyncio
 import json
 import sys
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator, Optional, Tuple
 
 import asyncssh
 import pytest
 
 from hermes.config import RecordingConfig
-
 
 # ============================================================================
 # Fixtures
@@ -40,50 +39,58 @@ async def recording_config(tmp_path: Path) -> RecordingConfig:
     )
 
 
-@pytest.fixture(scope="function")
-async def ssh_hermes_server(
-    recording_config: RecordingConfig, tmp_path: Path
-) -> AsyncGenerator[Tuple[str, int], None]:
+async def _start_hermes_server(
+    tmp_path: Path,
+    recording_enabled: bool = True,
+    recording_output_dir: Path | None = None,
+) -> AsyncGenerator[tuple[str, int, Path], None]:
     """
     Start a real Hermes SSH server with container pool.
 
+    Shared logic for server fixtures — avoids duplicating Docker checks,
+    config generation, host-key creation, process lifecycle, and cleanup.
+
+    Args:
+        tmp_path: Temporary directory for config/keys
+        recording_enabled: Whether session recording is on
+        recording_output_dir: Where .cast files go (defaults to tmp_path/recordings)
+
     Yields:
-        (host, port) tuple for SSH connection
+        (host, port, recordings_dir) tuple
 
     Raises:
-        pytest.skip if server fails to start
+        pytest.skip if Docker or image unavailable, or server fails to start
     """
-    import subprocess
     import socket
+    import subprocess
     import time
+
     import docker
     import yaml
-    from pathlib import Path
-    
+
+    recordings_dir = recording_output_dir or (tmp_path / "recordings")
+
     # Check Docker availability
     try:
         docker_client = docker.from_env()
         docker_client.ping()
     except Exception as e:
         pytest.skip(f"Docker not available: {e}")
-    
+
     # Check target image exists
     try:
         docker_client.images.get("hermes-target-ubuntu:latest")
     except docker.errors.ImageNotFound:
         pytest.skip("hermes-target-ubuntu:latest not found. Build it first.")
-    
+
     # Find available port
-    def find_free_port():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('', 0))
-            s.listen(1)
-            port = s.getsockname()[1]
-        return port
-    
-    port = find_free_port()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+
     host = "127.0.0.1"
-    
+
     # Create config file
     config_path = tmp_path / "test_config.yaml"
     test_config = {
@@ -100,7 +107,7 @@ async def ssh_hermes_server(
             "accept_all_after_failures": 3,
         },
         "container_pool": {
-            "size": 1,  # Reduced for faster test startup
+            "size": 1,
             "image": "hermes-target-ubuntu:latest",
             "spawn_timeout": 30,
             "security": {
@@ -108,27 +115,26 @@ async def ssh_hermes_server(
                 "memory_limit": "256m",
                 "cpu_quota": 0.5,
                 "pids_limit": 100,
-                "security_opt": ["no-new-privileges:true"],  # Remove seccomp=default
-            }
+                "security_opt": ["no-new-privileges:true"],
+            },
         },
         "recording": {
-            "enabled": recording_config.enabled,
-            "output_dir": str(recording_config.output_dir),
+            "enabled": recording_enabled,
+            "output_dir": str(recordings_dir),
         },
         "logging": {
-            "level": "INFO",  # Less verbose for tests
+            "level": "INFO",
             "format": "text",
         },
     }
-    
+
     with open(config_path, "w") as f:
         yaml.dump(test_config, f)
-    
+
     # Generate SSH host key
-    import asyncssh
-    host_key = asyncssh.generate_private_key('ssh-rsa')
+    host_key = asyncssh.generate_private_key("ssh-rsa")
     host_key.write_private_key(str(tmp_path / "test_host_key"))
-    
+
     # Start Hermes server
     hermes_process = subprocess.Popen(
         [sys.executable, "-m", "hermes", "--config", str(config_path)],
@@ -158,24 +164,25 @@ async def ssh_hermes_server(
         hermes_process.kill()
         hermes_process.wait(timeout=5)
         pytest.skip(f"Hermes server failed to start on {host}:{port}")
-    
+
     # Give it a moment to fully initialize
     await asyncio.sleep(0.5)
-    
+
     try:
-        yield (host, port)
+        yield (host, port, recordings_dir)
     finally:
-        # Cleanup
         hermes_process.terminate()
         try:
             hermes_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             hermes_process.kill()
             hermes_process.wait()
-        
+
         # Clean up any leftover containers
         try:
-            for container in docker_client.containers.list(all=True, filters={"name": "hermes-target"}):
+            for container in docker_client.containers.list(
+                all=True, filters={"name": "hermes-target"}
+            ):
                 try:
                     container.remove(force=True)
                 except Exception:
@@ -185,9 +192,27 @@ async def ssh_hermes_server(
 
 
 @pytest.fixture(scope="function")
+async def ssh_hermes_server(
+    recording_config: RecordingConfig, tmp_path: Path
+) -> AsyncGenerator[tuple[str, int], None]:
+    """
+    Start a real Hermes SSH server with container pool.
+
+    Yields:
+        (host, port) tuple for SSH connection
+    """
+    async for host, port, _recordings_dir in _start_hermes_server(
+        tmp_path,
+        recording_enabled=recording_config.enabled,
+        recording_output_dir=recording_config.output_dir,
+    ):
+        yield (host, port)
+
+
+@pytest.fixture(scope="function")
 async def ssh_connected_session(
-    ssh_hermes_server: Tuple[str, int],
-) -> AsyncGenerator[Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess], None]:
+    ssh_hermes_server: tuple[str, int],
+) -> AsyncGenerator[tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess], None]:
     """
     Connect to Hermes server via SSH and open interactive PTY session.
 
@@ -208,9 +233,9 @@ async def ssh_connected_session(
             username="root",
             password="toor",
             known_hosts=None,
-            server_host_key_algs=['ssh-rsa'],
+            server_host_key_algs=["ssh-rsa"],
         )
-        
+
         # Create PTY session
         _chan, process = await conn.create_session(
             asyncssh.SSHClientProcess,
@@ -218,18 +243,18 @@ async def ssh_connected_session(
             term_size=(80, 24),
             encoding=None,
         )
-        
+
         # Wait for initial shell prompt
-        await asyncio.sleep(0.3)  # Optimized from 0.5s
-        
+        await asyncio.sleep(0.3)
+
         # Clear any initial output (banner, prompt)
         try:
-            await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)  # Faster
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
+        except TimeoutError:
             pass
-        
+
         yield (conn, process)
-        
+
     except Exception as e:
         pytest.skip(f"Failed to connect to Hermes server: {e}")
     finally:
@@ -243,146 +268,16 @@ async def ssh_connected_session(
 
 @pytest.fixture(scope="function")
 async def ssh_hermes_server_no_recording(
-    tmp_path: Path
-) -> AsyncGenerator[Tuple[str, int, Path], None]:
+    tmp_path: Path,
+) -> AsyncGenerator[tuple[str, int, Path], None]:
     """
     Start a real Hermes SSH server with recording DISABLED.
 
     Yields:
         (host, port, recordings_dir) tuple for SSH connection
-
-    Raises:
-        pytest.skip if server fails to start
     """
-    import subprocess
-    import socket
-    import time
-    import docker
-    import yaml
-    
-    # Check Docker availability
-    try:
-        docker_client = docker.from_env()
-        docker_client.ping()
-    except Exception as e:
-        pytest.skip(f"Docker not available: {e}")
-    
-    # Check target image exists
-    try:
-        docker_client.images.get("hermes-target-ubuntu:latest")
-    except docker.errors.ImageNotFound:
-        pytest.skip("hermes-target-ubuntu:latest not found. Build it first.")
-    
-    # Find available port
-    def find_free_port():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('', 0))
-            s.listen(1)
-            port = s.getsockname()[1]
-        return port
-    
-    port = find_free_port()
-    host = "127.0.0.1"
-    recordings_dir = tmp_path / "recordings"
-    
-    # Create config file with recording DISABLED
-    config_path = tmp_path / "test_config_no_recording.yaml"
-    test_config = {
-        "server": {
-            "host": host,
-            "port": port,
-            "host_key_path": str(tmp_path / "test_host_key"),
-        },
-        "authentication": {
-            "static_credentials": [
-                {"username": "root", "password": "toor"},
-                {"username": "admin", "password": "admin123"},
-            ],
-            "accept_all_after_failures": 3,
-        },
-        "container_pool": {
-            "size": 1,
-            "image": "hermes-target-ubuntu:latest",
-            "spawn_timeout": 30,
-            "security": {
-                "network_mode": "none",
-                "memory_limit": "256m",
-                "cpu_quota": 0.5,
-                "pids_limit": 100,
-                "security_opt": ["no-new-privileges:true"],
-            }
-        },
-        "recording": {
-            "enabled": False,  # RECORDING DISABLED
-            "output_dir": str(recordings_dir),
-        },
-        "logging": {
-            "level": "INFO",
-            "format": "text",
-        },
-    }
-    
-    with open(config_path, "w") as f:
-        yaml.dump(test_config, f)
-    
-    # Generate SSH host key
-    import asyncssh
-    host_key = asyncssh.generate_private_key('ssh-rsa')
-    host_key.write_private_key(str(tmp_path / "test_host_key"))
-    
-    # Start Hermes server
-    hermes_process = subprocess.Popen(
-        [sys.executable, "-m", "hermes", "--config", str(config_path)],
-        cwd=str(Path(__file__).parent.parent.parent / "src"),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    # Wait for server to be ready
-    max_wait = 15
-    start_time = time.time()
-    server_ready = False
-
-    while time.time() - start_time < max_wait:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                result = s.connect_ex((host, port))
-                if result == 0:
-                    server_ready = True
-                    break
-        except Exception:
-            pass
-        await asyncio.sleep(0.2)
-
-    if not server_ready:
-        hermes_process.kill()
-        hermes_process.wait(timeout=5)
-        pytest.skip(f"Hermes server failed to start on {host}:{port}")
-    
-    await asyncio.sleep(0.5)
-    
-    try:
+    async for host, port, recordings_dir in _start_hermes_server(tmp_path, recording_enabled=False):
         yield (host, port, recordings_dir)
-    finally:
-        # Cleanup
-        hermes_process.terminate()
-        try:
-            hermes_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            hermes_process.kill()
-            hermes_process.wait()
-        
-        # Clean up any leftover containers
-        try:
-            for container in docker_client.containers.list(all=True, filters={"name": "hermes-target"}):
-                try:
-                    container.remove(force=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
 
 
 # ============================================================================
@@ -406,21 +301,21 @@ def parse_cast_file(path: Path) -> dict:
         FileNotFoundError: If file doesn't exist
         json.JSONDecodeError: If file is malformed
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.read().strip().splitlines()
-    
+
     if len(lines) == 0:
         raise ValueError("Empty .cast file")
-    
+
     # First line is header
     header = json.loads(lines[0])
-    
+
     # Remaining lines are events
     events = []
     for line in lines[1:]:
         if line.strip():  # Skip empty lines
             events.append(json.loads(line))
-    
+
     return {"header": header, "events": events}
 
 
@@ -433,20 +328,22 @@ def validate_cast_format(cast: dict) -> None:
     """
     assert "header" in cast, "Missing 'header' key in cast dict"
     header = cast["header"]
-    
+
     assert "version" in header, "Missing 'version' in header"
     assert header["version"] == 2, f"Expected version 2, got {header['version']}"
-    
+
     assert "width" in header, "Missing 'width' in header"
     assert isinstance(header["width"], int), f"Width must be int, got {type(header['width'])}"
     assert header["width"] >= 1, f"Width must be >= 1, got {header['width']}"
-    
+
     assert "height" in header, "Missing 'height' in header"
     assert isinstance(header["height"], int), f"Height must be int, got {type(header['height'])}"
     assert header["height"] >= 1, f"Height must be >= 1, got {header['height']}"
-    
+
     assert "timestamp" in header, "Missing 'timestamp' in header"
-    assert isinstance(header["timestamp"], int), f"Timestamp must be int, got {type(header['timestamp'])}"
+    assert isinstance(
+        header["timestamp"], int
+    ), f"Timestamp must be int, got {type(header['timestamp'])}"
     assert header["timestamp"] > 0, f"Timestamp must be > 0, got {header['timestamp']}"
 
 
@@ -458,37 +355,20 @@ def validate_events_monotonic(events: list) -> None:
         AssertionError: If timestamps decrease or are negative
     """
     for i, event in enumerate(events):
-        assert len(event) >= 3, f"Event {i} must have [timestamp, type, data], got {len(event)} elements"
+        assert (
+            len(event) >= 3
+        ), f"Event {i} must have [timestamp, type, data], got {len(event)} elements"
         timestamp = event[0]
-        assert isinstance(timestamp, (int, float)), f"Event {i} timestamp must be numeric, got {type(timestamp)}"
+        assert isinstance(
+            timestamp, (int, float)
+        ), f"Event {i} timestamp must be numeric, got {type(timestamp)}"
         assert timestamp >= 0.0, f"Event {i} timestamp must be >= 0, got {timestamp}"
-        
+
         if i > 0:
             prev_timestamp = events[i - 1][0]
-            assert timestamp >= prev_timestamp, \
-                f"Event {i} timestamp {timestamp} < previous {prev_timestamp} (not monotonic)"
-
-
-def validate_event_types(events: list, expected_types: list) -> None:
-    """
-    Validate that event types match expected sequence.
-
-    Args:
-        events: List of [timestamp, type, data] tuples
-        expected_types: List of expected types, e.g. ["o", "i", "o", "i"]
-
-    Raises:
-        AssertionError: If event types don't match
-    """
-    actual_types = [event[1] for event in events]
-    assert len(actual_types) == len(expected_types), \
-        f"Expected {len(expected_types)} events, got {len(actual_types)}"
-    
-    for i, (actual, expected) in enumerate(zip(actual_types, expected_types)):
-        assert actual == expected, \
-            f"Event {i}: expected type '{expected}', got '{actual}'\n" \
-            f"Expected sequence: {expected_types}\n" \
-            f"Actual sequence:   {actual_types}"
+            assert (
+                timestamp >= prev_timestamp
+            ), f"Event {i} timestamp {timestamp} < previous {prev_timestamp} (not monotonic)"
 
 
 def extract_output_events(events: list) -> list:
@@ -501,9 +381,7 @@ def extract_input_events(events: list) -> list:
     return [event[2] for event in events if event[1] == "i"]
 
 
-async def send_command(
-    process: asyncssh.SSHClientProcess, cmd: str, timeout: float = 5.0
-) -> bytes:
+async def send_command(process: asyncssh.SSHClientProcess, cmd: str, timeout: float = 5.0) -> bytes:
     """
     Send SSH command and read output until idle or timeout.
 
@@ -533,38 +411,56 @@ async def send_command(
 
         try:
             read_timeout = min(idle_timeout, remaining)
-            data = await asyncio.wait_for(
-                process.stdout.read(4096), timeout=read_timeout
-            )
+            data = await asyncio.wait_for(process.stdout.read(4096), timeout=read_timeout)
             if not data:
                 break
             buf.extend(data)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # No data for idle_timeout seconds, consider complete
             break
 
     return bytes(buf)
 
 
-def assert_json_file_exists(path: Path, session_id: str) -> dict:
+async def await_cast_files(
+    recordings_dir: Path,
+    expected: int = 1,
+    timeout: float = 5.0,
+    poll_interval: float = 0.2,
+) -> list[Path]:
     """
-    Assert .json metadata file exists and parse it.
+    Poll for .cast files in the recordings directory with a timeout.
+
+    The server may still be flushing recordings to disk after the SSH
+    connection closes, so immediate glob can miss files.
 
     Args:
-        path: Recordings directory
-        session_id: Session ID to find
+        recordings_dir: Directory to search for .cast files
+        expected: Minimum number of .cast files expected
+        timeout: Maximum seconds to wait
+        poll_interval: Seconds between polls
 
     Returns:
-        Parsed JSON metadata dict
+        List of .cast file paths found
 
     Raises:
-        AssertionError: If file doesn't exist
+        AssertionError: If expected files not found within timeout
     """
-    json_path = path / f"{session_id}.json"
-    assert json_path.exists(), f"Metadata file not found: {json_path}"
-    
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    elapsed = 0.0
+    cast_files: list[Path] = []
+    while elapsed < timeout:
+        cast_files = list(recordings_dir.glob("*.cast"))
+        if len(cast_files) >= expected:
+            return cast_files
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+
+    assert len(cast_files) >= expected, (
+        f"Expected >= {expected} .cast files in {recordings_dir} after {timeout}s, "
+        f"found {len(cast_files)}"
+    )
+    return cast_files
 
 
 # ============================================================================
@@ -582,7 +478,7 @@ class TestRecordingValidation:
 
     async def test_basic_io_capture(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -614,17 +510,13 @@ class TestRecordingValidation:
         # Act: exit session
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)  # Reduced from 0.5s
-        
+
         # Close connection
         conn.close()
         await conn.wait_closed()
 
-        # Assert: .cast file exists (find it by looking at directory)
-        recordings_dir.mkdir(parents=True, exist_ok=True)
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1, f"No .cast files found in {recordings_dir}"
-        
-        # Take the most recent .cast file
+        # Assert: .cast file exists (poll to allow server flush)
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
 
         # Assert: .cast is valid
@@ -644,7 +536,7 @@ class TestRecordingValidation:
 
     async def test_multiple_commands(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -670,22 +562,21 @@ class TestRecordingValidation:
         assert conn is not None
 
         # Act: send commands
-        output1 = await send_command(process, "ls\n", timeout=3.0)
-        output2 = await send_command(process, "pwd\n", timeout=3.0)
-        output3 = await send_command(process, "echo hello\n", timeout=3.0)
+        await send_command(process, "ls\n", timeout=3.0)
+        await send_command(process, "pwd\n", timeout=3.0)
+        await send_command(process, "echo hello\n", timeout=3.0)
 
         # Act: exit
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)  # Optimized
-        
+
         conn.close()
         await conn.wait_closed()
 
         # Assert: .cast file exists and is valid
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
-        
+
         cast = parse_cast_file(cast_path)
         validate_cast_format(cast)
 
@@ -700,9 +591,26 @@ class TestRecordingValidation:
         assert input_count >= 3, "Should capture at least 3 input events"
         assert output_count >= 3, "Should capture at least 3 output events"
 
+        # Assert: recording contains the actual command content
+        output_events = extract_output_events(events)
+        combined_output = "".join(output_events)
+        assert (
+            "hello" in combined_output
+        ), f"Expected 'hello' in output events, got: {combined_output[:500]}"
+
+        input_events = extract_input_events(events)
+        combined_input = "".join(input_events)
+        assert "ls" in combined_input, f"Expected 'ls' in input events, got: {combined_input[:500]}"
+        assert (
+            "pwd" in combined_input
+        ), f"Expected 'pwd' in input events, got: {combined_input[:500]}"
+        assert (
+            "echo hello" in combined_input
+        ), f"Expected 'echo hello' in input events, got: {combined_input[:500]}"
+
     async def test_unicode_handling(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -725,20 +633,19 @@ class TestRecordingValidation:
         unicode_cmd = 'echo "こんにちは 🎉"\n'
 
         # Act: send unicode command
-        output = await send_command(process, unicode_cmd, timeout=3.0)
+        await send_command(process, unicode_cmd, timeout=3.0)
 
         # Act: exit
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)  # Optimized
-        
+
         conn.close()
         await conn.wait_closed()
 
         # Assert: .cast exists
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
-        
+
         cast = parse_cast_file(cast_path)
 
         # Assert: unicode preserved in events
@@ -751,7 +658,7 @@ class TestRecordingValidation:
 
     async def test_large_output(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -786,8 +693,7 @@ class TestRecordingValidation:
         await conn.wait_closed()
 
         # Assert: .cast exists
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
 
         cast = parse_cast_file(cast_path)
@@ -808,7 +714,7 @@ class TestRecordingValidation:
     @pytest.mark.xfail(reason="Resize event capture is environment-dependent")
     async def test_terminal_resize_events(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -833,27 +739,28 @@ class TestRecordingValidation:
         assert conn is not None
 
         # Act: send initial command
-        output1 = await send_command(process, "echo initial\n", timeout=2.0)
+        await send_command(process, "echo initial\n", timeout=2.0)
 
-        # Act: attempt resize
-        conn.set_terminal_size(120, 40)
+        # Act: attempt resize on the underlying channel
+        chan = getattr(process, "_chan", None)
+        if chan is not None and hasattr(chan, "change_terminal_size"):
+            chan.change_terminal_size(120, 40)
         await asyncio.sleep(0.1)
 
         # Act: send command after resize
-        output2 = await send_command(process, "echo resized\n", timeout=2.0)
+        await send_command(process, "echo resized\n", timeout=2.0)
 
         # Act: exit
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)  # Optimized
-        
+
         conn.close()
         await conn.wait_closed()
 
         # Assert: .cast exists
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
-        
+
         cast = parse_cast_file(cast_path)
 
         # Assert: events captured
@@ -866,15 +773,19 @@ class TestRecordingValidation:
         # Assert: at least one resize event with correct format
         resize_events = [e for e in events if e[1] == "r"]
         assert len(resize_events) >= 1, "Expected at least one resize ('r') event"
-        for ts, etype, payload in resize_events:
-            assert isinstance(payload, str), f"Resize payload should be a string, got {type(payload)}"
+        for _ts, _etype, payload in resize_events:
+            assert isinstance(
+                payload, str
+            ), f"Resize payload should be a string, got {type(payload)}"
             parts = payload.split("x")
             assert len(parts) == 2, f"Resize payload should be 'WIDTHxHEIGHT', got '{payload}'"
-            assert all(p.isdigit() for p in parts), f"Resize dimensions should be numeric, got '{payload}'"
+            assert all(
+                p.isdigit() for p in parts
+            ), f"Resize dimensions should be numeric, got '{payload}'"
 
     async def test_rapid_commands(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -906,15 +817,14 @@ class TestRecordingValidation:
         # Act: exit
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)  # Optimized
-        
+
         conn.close()
         await conn.wait_closed()
 
         # Assert: .cast exists
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1
+        cast_files = await await_cast_files(recordings_dir)
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
-        
+
         cast = parse_cast_file(cast_path)
 
         # Assert: all commands captured
@@ -927,7 +837,7 @@ class TestRecordingValidation:
 
     async def test_concurrent_sessions_recording(
         self,
-        ssh_hermes_server: Tuple[str, int],
+        ssh_hermes_server: tuple[str, int],
         recording_config: RecordingConfig,
     ):
         """
@@ -950,8 +860,12 @@ class TestRecordingValidation:
 
         # Act: Connect session 1
         async with asyncssh.connect(
-            host, port=port, username="root", password="toor", known_hosts=None,
-            server_host_key_algs=['ssh-rsa'],
+            host,
+            port=port,
+            username="root",
+            password="toor",
+            known_hosts=None,
+            server_host_key_algs=["ssh-rsa"],
         ) as conn1:
             _, process1 = await conn1.create_session(
                 asyncssh.SSHClientProcess,
@@ -962,8 +876,12 @@ class TestRecordingValidation:
 
             # Act: Connect session 2
             async with asyncssh.connect(
-                host, port=port, username="admin", password="admin123", known_hosts=None,
-                server_host_key_algs=['ssh-rsa'],
+                host,
+                port=port,
+                username="admin",
+                password="admin123",
+                known_hosts=None,
+                server_host_key_algs=["ssh-rsa"],
             ) as conn2:
                 _, process2 = await conn2.create_session(
                     asyncssh.SSHClientProcess,
@@ -983,20 +901,38 @@ class TestRecordingValidation:
                 await asyncio.sleep(0.2)
 
         # Assert: 2 .cast files created with different session_ids
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 2, f"Expected >= 2 .cast files, found {len(cast_files)}"
+        cast_files = await await_cast_files(recordings_dir, expected=2)
 
-        # Assert: Each file is valid and contains own data
+        # Assert: Each file is valid and contains own data, with no cross-contamination
+        session_outputs: list[str] = []
         for cast_file in cast_files:
             cast = parse_cast_file(cast_file)
             validate_cast_format(cast)
 
             events = cast["events"]
             assert len(events) >= 2, f"Session should have >= 2 events: {cast_file}"
+            session_outputs.append("".join(extract_output_events(events)))
+
+        # Assert: isolation — each recording contains its own marker, not the other's
+        has_s1 = [i for i, out in enumerate(session_outputs) if "session1" in out]
+        has_s2 = [i for i, out in enumerate(session_outputs) if "session2" in out]
+
+        assert has_s1, "No recording contains 'session1' output"
+        assert has_s2, "No recording contains 'session2' output"
+
+        # Verify no cross-contamination: a recording with session1 should lack session2
+        for i in has_s1:
+            assert (
+                "session2" not in session_outputs[i]
+            ), f"Recording {cast_files[i].name} contains both 'session1' and 'session2'"
+        for i in has_s2:
+            assert (
+                "session1" not in session_outputs[i]
+            ), f"Recording {cast_files[i].name} contains both 'session2' and 'session1'"
 
     async def test_metadata_sidecar(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -1018,21 +954,21 @@ class TestRecordingValidation:
         assert conn is not None
 
         # Act: run command
-        output = await send_command(process, "whoami\n")
+        await send_command(process, "whoami\n")
 
         # Act: exit
         process.stdin.write(b"exit\n")
-        await asyncio.sleep(0.2)  # Optimized
-        
+        await asyncio.sleep(0.2)
+
         conn.close()
         await conn.wait_closed()
 
         # Assert: .json metadata file exists
         json_files = list(recordings_dir.glob("*.json"))
         assert len(json_files) >= 1, f"No .json files found in {recordings_dir}"
-        
+
         json_path = max(json_files, key=lambda p: p.stat().st_mtime)
-        with open(json_path, "r") as f:
+        with open(json_path) as f:
             metadata = json.load(f)
 
         # Assert: metadata has expected fields
@@ -1043,7 +979,7 @@ class TestRecordingValidation:
 
     async def test_recording_disabled_config(
         self,
-        ssh_hermes_server_no_recording: Tuple[str, int, Path],
+        ssh_hermes_server_no_recording: tuple[str, int, Path],
     ):
         """
         Validate no .cast files created when recording disabled in config.
@@ -1067,23 +1003,23 @@ class TestRecordingValidation:
             username="root",
             password="toor",
             known_hosts=None,
-            server_host_key_algs=['ssh-rsa'],
+            server_host_key_algs=["ssh-rsa"],
         )
-        
+
         _chan, process = await conn.create_session(
             asyncssh.SSHClientProcess,
             term_type="xterm",
             term_size=(80, 24),
             encoding=None,
         )
-        
+
         # Wait for shell prompt
         await asyncio.sleep(0.3)
-        
+
         # Clear initial output
         try:
             await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         # Act: run command (verify session works)
@@ -1093,7 +1029,7 @@ class TestRecordingValidation:
         # Act: exit session
         process.stdin.write(b"exit\n")
         await asyncio.sleep(0.2)
-        
+
         conn.close()
         await conn.wait_closed()
 
@@ -1101,13 +1037,17 @@ class TestRecordingValidation:
         recordings_dir.mkdir(parents=True, exist_ok=True)
         cast_files = list(recordings_dir.glob("*.cast"))
         json_files = list(recordings_dir.glob("*.json"))
-        
-        assert len(cast_files) == 0, f"Should not record when disabled, found {len(cast_files)} .cast files: {cast_files}"
-        assert len(json_files) == 0, f"Should not record when disabled, found {len(json_files)} .json files: {json_files}"
+
+        assert (
+            len(cast_files) == 0
+        ), f"Should not record when disabled, found {len(cast_files)} .cast files: {cast_files}"
+        assert (
+            len(json_files) == 0
+        ), f"Should not record when disabled, found {len(json_files)} .json files: {json_files}"
 
     async def test_error_mid_session_partial_recording(
         self,
-        ssh_connected_session: Tuple[asyncssh.SSHClientConnection, asyncssh.SSHServerProcess],
+        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
         recording_config: RecordingConfig,
     ):
         """
@@ -1130,16 +1070,15 @@ class TestRecordingValidation:
         assert conn is not None
 
         # Act: send command
-        output = await send_command(process, "echo test\n")
+        await send_command(process, "echo test\n")
 
         # Act: force disconnect (simulate container crash / network drop)
         conn.abort()
         await asyncio.sleep(0.5)
 
         # Assert: .cast file exists even after disconnect
-        cast_files = list(recordings_dir.glob("*.cast"))
-        assert len(cast_files) >= 1, "Partial .cast file should exist after disconnect"
-        
+        cast_files = await await_cast_files(recordings_dir)
+
         cast_path = max(cast_files, key=lambda p: p.stat().st_mtime)
 
         # Assert: .cast is still valid (not corrupted)
