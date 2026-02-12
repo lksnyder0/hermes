@@ -135,13 +135,18 @@ async def _start_hermes_server(
     host_key = asyncssh.generate_private_key("ssh-rsa")
     host_key.write_private_key(str(tmp_path / "test_host_key"))
 
+    # Create log files for server output
+    stdout_log = tmp_path / "hermes_stdout.log"
+    stderr_log = tmp_path / "hermes_stderr.log"
+
     # Start Hermes server
-    hermes_process = subprocess.Popen(
-        [sys.executable, "-m", "hermes", "--config", str(config_path)],
-        cwd=str(Path(__file__).parent.parent.parent / "src"),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    with open(stdout_log, "w") as stdout_f, open(stderr_log, "w") as stderr_f:
+        hermes_process = subprocess.Popen(
+            [sys.executable, "-m", "hermes", "--config", str(config_path)],
+            cwd=str(Path(__file__).parent.parent.parent / "src"),
+            stdout=stdout_f,
+            stderr=stderr_f,
+        )
 
     # Wait for server to be ready
     max_wait = 15  # seconds
@@ -163,7 +168,14 @@ async def _start_hermes_server(
     if not server_ready:
         hermes_process.kill()
         hermes_process.wait(timeout=5)
-        pytest.skip(f"Hermes server failed to start on {host}:{port}")
+        # Include last lines of logs in skip message
+        error_msg = f"Hermes server failed to start on {host}:{port}"
+        if stderr_log.exists():
+            stderr_content = stderr_log.read_text()
+            if stderr_content:
+                last_lines = "\n".join(stderr_content.strip().split("\n")[-10:])
+                error_msg += f"\n\nLast 10 lines of stderr:\n{last_lines}"
+        pytest.skip(error_msg)
 
     # Give it a moment to fully initialize
     await asyncio.sleep(0.5)
@@ -212,12 +224,15 @@ async def ssh_hermes_server(
 @pytest.fixture(scope="function")
 async def ssh_connected_session(
     ssh_hermes_server: tuple[str, int],
-) -> AsyncGenerator[tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess], None]:
+) -> AsyncGenerator[
+    tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel],
+    None,
+]:
     """
     Connect to Hermes server via SSH and open interactive PTY session.
 
     Yields:
-        (connection, process) tuple
+        (connection, process, channel) tuple
 
     Raises:
         pytest.skip if connection fails
@@ -237,7 +252,7 @@ async def ssh_connected_session(
         )
 
         # Create PTY session
-        _chan, process = await conn.create_session(
+        chan, process = await conn.create_session(
             asyncssh.SSHClientProcess,
             term_type="xterm",
             term_size=(80, 24),
@@ -253,7 +268,7 @@ async def ssh_connected_session(
         except TimeoutError:
             pass
 
-        yield (conn, process)
+        yield (conn, process, chan)
 
     except Exception as e:
         pytest.skip(f"Failed to connect to Hermes server: {e}")
@@ -463,6 +478,47 @@ async def await_cast_files(
     return cast_files
 
 
+async def await_metadata_files(
+    recordings_dir: Path,
+    expected: int = 1,
+    timeout: float = 5.0,
+    poll_interval: float = 0.2,
+) -> list[Path]:
+    """
+    Poll for .json metadata files in the recordings directory with a timeout.
+
+    The server may still be flushing metadata to disk after the SSH
+    connection closes, so immediate glob can miss files.
+
+    Args:
+        recordings_dir: Directory to search for .json files
+        expected: Minimum number of .json files expected
+        timeout: Maximum seconds to wait
+        poll_interval: Seconds between polls
+
+    Returns:
+        List of .json file paths found
+
+    Raises:
+        AssertionError: If expected files not found within timeout
+    """
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    elapsed = 0.0
+    json_files: list[Path] = []
+    while elapsed < timeout:
+        json_files = list(recordings_dir.glob("*.json"))
+        if len(json_files) >= expected:
+            return json_files
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+
+    assert len(json_files) >= expected, (
+        f"Expected >= {expected} .json files in {recordings_dir} after {timeout}s, "
+        f"found {len(json_files)}"
+    )
+    return json_files
+
+
 # ============================================================================
 # Tests
 # ============================================================================
@@ -478,7 +534,9 @@ class TestRecordingValidation:
 
     async def test_basic_io_capture(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -496,7 +554,7 @@ class TestRecordingValidation:
             - ~4-5 events: output prompt, input "whoami", output "root"
             - All timestamps >= 0 and monotonic
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -536,7 +594,9 @@ class TestRecordingValidation:
 
     async def test_multiple_commands(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -555,7 +615,7 @@ class TestRecordingValidation:
             - "pwd" in some output event
             - "hello" in some output event
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -610,7 +670,9 @@ class TestRecordingValidation:
 
     async def test_unicode_handling(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -626,7 +688,7 @@ class TestRecordingValidation:
             - JSON valid and parseable
             - Output event contains original unicode
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -658,7 +720,9 @@ class TestRecordingValidation:
 
     async def test_large_output(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -674,7 +738,7 @@ class TestRecordingValidation:
             - .cast file size reasonable (not truncated)
             - Output events contain full data
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -714,7 +778,9 @@ class TestRecordingValidation:
     @pytest.mark.xfail(reason="Resize event capture is environment-dependent")
     async def test_terminal_resize_events(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -732,7 +798,7 @@ class TestRecordingValidation:
             - Format: [timestamp, "r", "WIDTHxHEIGHT"]
             - Timestamps still monotonic
         """
-        conn, process = ssh_connected_session
+        conn, process, chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -741,9 +807,8 @@ class TestRecordingValidation:
         # Act: send initial command
         await send_command(process, "echo initial\n", timeout=2.0)
 
-        # Act: attempt resize on the underlying channel
-        chan = getattr(process, "_chan", None)
-        if chan is not None and hasattr(chan, "change_terminal_size"):
+        # Act: attempt resize using the channel
+        if hasattr(chan, "change_terminal_size"):
             chan.change_terminal_size(120, 40)
         await asyncio.sleep(0.1)
 
@@ -785,7 +850,9 @@ class TestRecordingValidation:
 
     async def test_rapid_commands(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -800,7 +867,7 @@ class TestRecordingValidation:
             - All 5+ output events captured
             - No data loss or corruption
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -932,7 +999,9 @@ class TestRecordingValidation:
 
     async def test_metadata_sidecar(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -947,7 +1016,7 @@ class TestRecordingValidation:
             - Valid JSON format
             - All fields non-empty
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
@@ -964,9 +1033,7 @@ class TestRecordingValidation:
         await conn.wait_closed()
 
         # Assert: .json metadata file exists
-        json_files = list(recordings_dir.glob("*.json"))
-        assert len(json_files) >= 1, f"No .json files found in {recordings_dir}"
-
+        json_files = await await_metadata_files(recordings_dir)
         json_path = max(json_files, key=lambda p: p.stat().st_mtime)
         with open(json_path) as f:
             metadata = json.load(f)
@@ -997,41 +1064,37 @@ class TestRecordingValidation:
         host, port, recordings_dir = ssh_hermes_server_no_recording
 
         # Arrange: Connect to server with recording disabled
-        conn = await asyncssh.connect(
+        async with asyncssh.connect(
             host,
             port=port,
             username="root",
             password="toor",
             known_hosts=None,
             server_host_key_algs=["ssh-rsa"],
-        )
+        ) as conn:
+            _chan, process = await conn.create_session(
+                asyncssh.SSHClientProcess,
+                term_type="xterm",
+                term_size=(80, 24),
+                encoding=None,
+            )
 
-        _chan, process = await conn.create_session(
-            asyncssh.SSHClientProcess,
-            term_type="xterm",
-            term_size=(80, 24),
-            encoding=None,
-        )
+            # Wait for shell prompt
+            await asyncio.sleep(0.3)
 
-        # Wait for shell prompt
-        await asyncio.sleep(0.3)
+            # Clear initial output
+            try:
+                await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
+            except TimeoutError:
+                pass
 
-        # Clear initial output
-        try:
-            await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
-        except TimeoutError:
-            pass
+            # Act: run command (verify session works)
+            output = await send_command(process, "whoami\n")
+            assert len(output) > 0, "Session should work even with recording disabled"
 
-        # Act: run command (verify session works)
-        output = await send_command(process, "whoami\n")
-        assert len(output) > 0, "Session should work even with recording disabled"
-
-        # Act: exit session
-        process.stdin.write(b"exit\n")
-        await asyncio.sleep(0.2)
-
-        conn.close()
-        await conn.wait_closed()
+            # Act: exit session
+            process.stdin.write(b"exit\n")
+            await asyncio.sleep(0.2)
 
         # Assert: no recording files created
         recordings_dir.mkdir(parents=True, exist_ok=True)
@@ -1047,7 +1110,9 @@ class TestRecordingValidation:
 
     async def test_error_mid_session_partial_recording(
         self,
-        ssh_connected_session: tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess],
+        ssh_connected_session: tuple[
+            asyncssh.SSHClientConnection, asyncssh.SSHClientProcess, asyncssh.SSHClientChannel
+        ],
         recording_config: RecordingConfig,
     ):
         """
@@ -1063,7 +1128,7 @@ class TestRecordingValidation:
             - Can still be parsed
             - Timestamps monotonic (up to disconnect point)
         """
-        conn, process = ssh_connected_session
+        conn, process, _chan = ssh_connected_session
         recordings_dir = recording_config.output_dir
 
         # Arrange
