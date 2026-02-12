@@ -43,6 +43,7 @@ async def _start_hermes_server(
     tmp_path: Path,
     recording_enabled: bool = True,
     recording_output_dir: Path | None = None,
+    pool_size: int = 1,
 ) -> AsyncGenerator[tuple[str, int, Path], None]:
     """
     Start a real Hermes SSH server with container pool.
@@ -54,6 +55,7 @@ async def _start_hermes_server(
         tmp_path: Temporary directory for config/keys
         recording_enabled: Whether session recording is on
         recording_output_dir: Where .cast files go (defaults to tmp_path/recordings)
+        pool_size: Number of containers in the pool (default: 1)
 
     Yields:
         (host, port, recordings_dir) tuple
@@ -70,18 +72,19 @@ async def _start_hermes_server(
 
     recordings_dir = recording_output_dir or (tmp_path / "recordings")
 
-    # Check Docker availability
+    # Check Docker availability and required image
+    docker_client = None
     try:
         docker_client = docker.from_env()
         docker_client.ping()
-    except Exception as e:
-        pytest.skip(f"Docker not available: {e}")
-
-    # Check target image exists
-    try:
         docker_client.images.get("hermes-target-ubuntu:latest")
     except docker.errors.ImageNotFound:
         pytest.skip("hermes-target-ubuntu:latest not found. Build it first.")
+    except Exception as e:
+        pytest.skip(f"Docker not available: {e}")
+    finally:
+        if docker_client:
+            docker_client.close()
 
     # Find available port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -107,7 +110,7 @@ async def _start_hermes_server(
             "accept_all_after_failures": 3,
         },
         "container_pool": {
-            "size": 1,
+            "size": pool_size,
             "image": "hermes-target-ubuntu:latest",
             "spawn_timeout": 30,
             "security": {
@@ -222,6 +225,25 @@ async def ssh_hermes_server(
 
 
 @pytest.fixture(scope="function")
+async def ssh_hermes_server_concurrent(
+    recording_config: RecordingConfig, tmp_path: Path
+) -> AsyncGenerator[tuple[str, int], None]:
+    """
+    Start a real Hermes SSH server with pool_size=2 for concurrent session tests.
+
+    Yields:
+        (host, port) tuple for SSH connection
+    """
+    async for host, port, _recordings_dir in _start_hermes_server(
+        tmp_path,
+        recording_enabled=recording_config.enabled,
+        recording_output_dir=recording_config.output_dir,
+        pool_size=2,
+    ):
+        yield (host, port)
+
+
+@pytest.fixture(scope="function")
 async def ssh_connected_session(
     ssh_hermes_server: tuple[str, int],
 ) -> AsyncGenerator[
@@ -264,7 +286,7 @@ async def ssh_connected_session(
         # Clear any initial output (banner, prompt)
         try:
             await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             pass
 
         yield (conn, process, chan)
@@ -430,7 +452,7 @@ async def send_command(process: asyncssh.SSHClientProcess, cmd: str, timeout: fl
             if not data:
                 break
             buf.extend(data)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             # No data for idle_timeout seconds, consider complete
             break
 
@@ -904,7 +926,7 @@ class TestRecordingValidation:
 
     async def test_concurrent_sessions_recording(
         self,
-        ssh_hermes_server: tuple[str, int],
+        ssh_hermes_server_concurrent: tuple[str, int],
         recording_config: RecordingConfig,
     ):
         """
@@ -920,7 +942,7 @@ class TestRecordingValidation:
             - No mixing of I/O between sessions
             - Each contains only its own commands
         """
-        host, port = ssh_hermes_server
+        host, port = ssh_hermes_server_concurrent
 
         # Arrange
         recordings_dir = recording_config.output_dir
