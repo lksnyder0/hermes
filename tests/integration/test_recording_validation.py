@@ -315,6 +315,7 @@ def parse_cast_file(path: Path) -> dict:
     Raises:
         FileNotFoundError: If file doesn't exist
         json.JSONDecodeError: If file is malformed
+        ValueError: If the .cast file is empty
     """
     with open(path, encoding="utf-8") as f:
         lines = f.read().strip().splitlines()
