@@ -1070,7 +1070,6 @@ class TestRecordingValidation:
             username="root",
             password="toor",
             known_hosts=None,
-            server_host_key_algs=["ssh-rsa"],
         ) as conn:
             _chan, process = await conn.create_session(
                 asyncssh.SSHClientProcess,
