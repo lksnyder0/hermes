@@ -248,7 +248,6 @@ async def ssh_connected_session(
             username="root",
             password="toor",
             known_hosts=None,
-            server_host_key_algs=["ssh-rsa"],
         )
 
         # Create PTY session
