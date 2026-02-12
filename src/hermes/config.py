@@ -58,7 +58,7 @@ class ContainerSecurityConfig(BaseModel):
 
     capabilities: CapabilityConfig = Field(default_factory=CapabilityConfig)
     security_opt: List[str] = Field(
-        default_factory=lambda: ["no-new-privileges:true", "seccomp=default"]
+        default_factory=lambda: ["no-new-privileges:true"]
     )
 
 
