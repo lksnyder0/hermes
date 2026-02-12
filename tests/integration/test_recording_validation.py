@@ -1104,7 +1104,7 @@ class TestRecordingValidation:
             # Clear initial output
             try:
                 await asyncio.wait_for(process.stdout.read(4096), timeout=0.3)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 pass
 
             # Act: run command (verify session works)
