@@ -166,6 +166,16 @@ async def container_session_handler(
             except Exception:
                 pass
 
+    except RuntimeError as e:
+        logger.error(f"Allocation failed: {e}")
+        try:
+            error_msg = b"\r\nContainer allocation failed - connection closed\r\n"
+            process.stdout.write(error_msg)
+            process.stdout.drain()
+            await process.stdout.drain()
+        except Exception:
+            pass
+
     finally:
         # Cancel timeout task to prevent memory leak
         if "timeout_task" in locals() and timeout_task:
