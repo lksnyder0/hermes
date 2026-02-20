@@ -60,16 +60,45 @@ The `container_session_handler` in `__main__.py` orchestrates the full lifecycle
 
 ---
 
+## Phase 5: Session Recording | In Progress | Asciinema v2 recorder, local filesystem storage, structured JSON logging
+
+Commit: `2a383d5`
+
+Added comprehensive integration tests for session recording validation with 9 passing tests covering end-to-end I/O capture, including:
+- Basic I/O recording validation
+- Multiple command interleaving
+- Unicode/emoji preservation
+- Large output handling (>10KB deterministic)
+- Rapid-fire command capture
+- Concurrent session isolation
+- JSON metadata file creation
+- Recording disabled functionality
+- Partial recording validity (abrupt disconnect)
+
+Key fixes implemented:
+- Fixed seccomp configuration bug where `seccomp=default` was incorrectly specified
+- Fixed Docker SDK kwargs in test fixtures
+- Added proper test infrastructure with fixtures and helper functions
+- Updated pytest configuration with new markers (`recording`, `ssh`, `docker`)
+- Added comprehensive documentation for running tests
+
+The implementation now includes:
+- Validation of asciicast v2 format correctness
+- Proper I/O accuracy with event interleaving
+- Timestamp validation and edge case handling
+- Performance optimizations
+
+---
+
 ## Remaining MVP Phases
 
 | Phase | Status | Summary |
 |-------|--------|---------|
-| 5. Session Recording | Not started | Asciinema v2 recorder, local filesystem storage, structured JSON logging |
-| 6. Config Integration | Partial | Parser done (Pydantic), needs integration throughout codebase |
-| 7. Security Hardening | Partial | Config defined, needs enforcement verification, session timeouts, input validation, rate limiting |
-| 8. Containerization | Not started | Hermes Dockerfile (Alpine), docker-compose.yml, helper scripts |
-| 9. Testing | Partial | Phase 2-4 unit tests exist (56 tests), needs integration tests and broader coverage |
-| 10. Documentation | Partial | README exists, needs SECURITY.md, deployment/dev guides |
+| 6. Config Integration | ✅ Complete | Parser done (Pydantic), integrated throughout codebase |
+| 7. Security Hardening | Partial | Config defined, enforcement verified, session timeouts implementation, input validation, rate limiting |
+| 8. Containerization | In Progress | Hermes Dockerfile (Alpine), docker-compose.yml, helper scripts |
+| 9. Testing | In Progress | Phase 2-9 unit tests passing (65 tests), Phase 5-6 integration tests, broader coverage |
+| 10. Documentation | In Progress | README, SECURITY.md complete, deployment/dev guides |
 
 ---
 
