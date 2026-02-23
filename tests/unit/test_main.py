@@ -29,14 +29,6 @@ from hermes.config import Config
 from hermes.server.backend import SessionInfo, PTYRequest
 
 
-@pytest.fixture
-def test_config() -> Config:
-    """Create a basic test configuration."""
-    config = Config()
-    config.server.session_timeout = 30
-    return config
-
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -671,33 +663,26 @@ class TestContainerSessionHandler:
         """Should write error to stdout if allocation fails."""
         mock_pool.allocate.side_effect = RuntimeError("pool exhausted")
 
-        # Should handle allocation failure gracefully
-        try:
-            await container_session_handler(
-                session_info,
-                pty_request,
-                mock_process,
-                mock_pool,
-                test_config,
-            )
-        except RuntimeError as e:
-            assert "pool exhausted" in str(e)
+        await container_session_handler(
+            session_info,
+            pty_request,
+            mock_process,
+            mock_pool,
+            test_config,
+        )
 
         mock_process.stdout.write.assert_called()
 
     @pytest.mark.asyncio
     async def test_allocation_failure_does_not_release(
-        self, session_info, pty_request, mock_process, mock_pool
+        self, session_info, pty_request, mock_process, mock_pool, test_config
     ):
         """Should not release container if allocation never succeeded."""
         mock_pool.allocate.side_effect = RuntimeError("pool exhausted")
 
-        # Should handle allocation failure gracefully and not release
-        try:
-            await container_session_handler(session_info, pty_request, mock_process, mock_pool, test_config)
-        except RuntimeError:
-            # Allocation failed, should not release
-            mock_pool.release.assert_not_called()
+        await container_session_handler(session_info, pty_request, mock_process, mock_pool, test_config)
+
+        mock_pool.release.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_proxy_failure_releases_container(
@@ -712,10 +697,7 @@ class TestContainerSessionHandler:
             proxy_instance.stop = AsyncMock()
             MockProxy.return_value = proxy_instance
 
-            try:
-                await container_session_handler(session_info, pty_request, mock_process, mock_pool, test_config)
-            except RuntimeError:
-                pass
+            await container_session_handler(session_info, pty_request, mock_process, mock_pool, test_config)
 
             mock_pool.release.assert_called_once()
 

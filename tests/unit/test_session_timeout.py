@@ -86,7 +86,7 @@ class TestTimeoutEventHandling:
         start = asyncio.get_event_loop().time()
         await asyncio.sleep(0.01)  # 10ms
         elapsed = asyncio.get_event_loop().time() - start
-        assert 0 <= elapsed < 100  # Allow some margin
+        assert 0.005 <= elapsed < 0.1  # Allow reasonable margin around 10ms
 
     @pytest.mark.asyncio
     async def test_asyncio_create_task_creation(self):
