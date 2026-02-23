@@ -3,8 +3,8 @@
 ## Project Configuration
 
 ### Location
-- **Project path**: `~/code/sandtrap/`
-- **Full path**: `/home/luke/code/sandtrap/`
+- **Project path**: `~/code/hermes/`
+- **Full path**: `/home/luke/code/hermes/`
 
 ### Python Version
 - **Target**: Python 3.14 (latest)
@@ -58,7 +58,7 @@
 ## Directory Structure
 
 ```
-~/code/sandtrap/
+~/code/hermes/
 ├── src/
 │   └── hermes/
 │       ├── __init__.py

@@ -9,9 +9,9 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
-import docker
+import docker.errors
 
 from hermes import __version__
 from hermes.config import Config
@@ -73,24 +73,26 @@ async def container_session_handler(
     pty_request: PTYRequest,
     process: object,
     container_pool: ContainerPool,
+    config: Config,
     recording_config=None,
 ) -> None:
     """
-    Handle SSH session by proxying to Docker container.
+    Handle SSH session by proxying to Docker container with timeout enforcement.
 
     Lifecycle:
     1. Allocate container from pool
     2. Create SessionRecorder (if enabled)
     3. Create ContainerProxy with recorder
     4. Start proxy (creates exec and I/O tasks)
-    5. Wait for proxy to complete
-    6. Release container back to pool
+    5. Monitor session timeout
+    6. Release container back to pool on completion or timeout
 
     Args:
         session_info: Session metadata
         pty_request: PTY configuration
         process: asyncssh.SSHServerProcess with stdin/stdout/stderr
         container_pool: Container pool manager
+        config: Complete Hermes configuration
         recording_config: Optional RecordingConfig for session recording
     """
     logger = logging.getLogger(__name__)
@@ -132,24 +134,48 @@ async def container_session_handler(
         # Step 4: Start proxy
         await proxy.start()
 
-        # Step 5: Wait for completion
-        await proxy.wait_completion()
+        # Step 5: Wait for completion with timeout monitoring
+        timeout_seconds = config.server.session_timeout
+        timeout_expired = asyncio.Event()
 
-    except RuntimeError as e:
-        # Container allocation or exec creation failed
-        logger.error(f"Session setup failed for {session_info.session_id}: {e}")
-        try:
-            error_msg = b"\r\nContainer allocation failed. Please try again later.\r\n"
-            process.stdout.write(error_msg)
-        except Exception:
-            pass  # Session may already be closed
+        async def timeout_monitor():
+            """Monitor session duration and trigger cleanup on timeout."""
+            logger.info(f"Session timeout set to {timeout_seconds}s for {session_info.session_id}")
+            await asyncio.sleep(timeout_seconds)
+            timeout_expired.set()
+            logger.warning(f"Session {session_info.session_id} timeout expired, initiating cleanup")
 
-    except Exception as e:
-        # Unexpected error
-        logger.exception(f"Session error for {session_info.session_id}: {e}")
+        timeout_task = asyncio.create_task(timeout_monitor())
+        container_task = asyncio.create_task(proxy.wait_completion())
+
+        done, pending = await asyncio.wait(
+            {timeout_task, container_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Cancel pending tasks
+        for task in pending:
+            task.cancel()
+
+        # Handle timeout expiration
+        if timeout_expired.is_set():
+            logger.info(f"Session {session_info.session_id} timed out, releasing container")
+            try:
+                error_msg = b"\r\nSession timeout - connection closed\r\n"
+                process.stdin.write(error_msg)
+                await process.stdin.drain()
+            except Exception:
+                pass
 
     finally:
-        # Step 6: Clean up
+        # Cancel timeout task to prevent memory leak
+        if "timeout_task" in locals() and timeout_task:
+            timeout_task.cancel()
+            try:
+                await timeout_task
+            except asyncio.CancelledError:
+                pass
+
+        # Step 6: Clean up proxy and container
         if proxy:
             await proxy.stop()
 
@@ -219,7 +245,7 @@ async def async_main(config_path: Path) -> int:
             process: object,
         ) -> None:
             await container_session_handler(
-                session_info, pty_request, process, container_pool, config.recording
+                session_info, pty_request, process, container_pool, config, config.recording
             )
 
         ssh_backend.set_session_handler(session_handler_with_pool)
