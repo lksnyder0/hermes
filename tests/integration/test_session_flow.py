@@ -155,7 +155,7 @@ class TestSessionHandlerErrorPaths:
         # Error message written to client
         process.stdout.write.assert_called_once()
         written = process.stdout.write.call_args[0][0]
-        assert b"Container allocation failed" in written
+        assert b"Session error" in written
 
         # Release should NOT be called since allocation failed
         pool.release.assert_not_called()

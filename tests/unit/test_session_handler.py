@@ -141,7 +141,7 @@ class TestContainerSessionHandler:
 
         mock_process.stdout.write.assert_called_once()
         written = mock_process.stdout.write.call_args[0][0]
-        assert b"Container allocation failed" in written
+        assert b"Session error" in written
 
     @pytest.mark.asyncio
     async def test_allocation_failure_still_releases(

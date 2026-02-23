@@ -5,6 +5,7 @@ Tests timeout monitoring, event handling, and cleanup behavior.
 """
 
 import asyncio
+import time
 
 import pytest
 
@@ -47,11 +48,10 @@ class TestTimeoutConfiguration:
 class TestTimeoutEventHandling:
     """Test timeout event handling with asyncio."""
 
-    @pytest.mark.asyncio
     async def test_timeout_event_set_after_delay(self):
         """Verify timeout_expired event is set after sleep completes."""
         timeout_seconds = 0.1
-        start_time = asyncio.get_event_loop().time()
+        start_time = time.perf_counter()
 
         async def timeout_monitor():
             await asyncio.sleep(timeout_seconds)
@@ -60,7 +60,7 @@ class TestTimeoutEventHandling:
         timeout_expired = asyncio.Event()
         await timeout_monitor()
 
-        elapsed = asyncio.get_event_loop().time() - start_time
+        elapsed = time.perf_counter() - start_time
         assert 0 <= elapsed < timeout_seconds * 2
         assert timeout_expired.is_set()
 
@@ -80,12 +80,11 @@ class TestTimeoutEventHandling:
         assert event1.is_set()
         assert event2.is_set()
 
-    @pytest.mark.asyncio
     async def test_asyncio_sleep_basic(self):
         """Test basic asyncio.sleep usage."""
-        start = asyncio.get_event_loop().time()
+        start = time.perf_counter()
         await asyncio.sleep(0.01)  # 10ms
-        elapsed = asyncio.get_event_loop().time() - start
+        elapsed = time.perf_counter() - start
         assert 0.005 <= elapsed < 0.1  # Allow reasonable margin around 10ms
 
     @pytest.mark.asyncio
@@ -130,7 +129,6 @@ class TestTimeoutEventHandling:
 class TestTimeoutTaskCancellation:
     """Test task cancellation during timeout scenarios."""
 
-    @pytest.mark.asyncio
     async def test_cancel_running_task(self):
         """Test cancelling a running asyncio task."""
         task_counter = [0]
@@ -151,7 +149,6 @@ class TestTimeoutTaskCancellation:
         assert task_counter[0] == 1
         assert task.cancelled()
 
-    @pytest.mark.asyncio
     async def test_cancelled_task_does_not_hang(self):
         """Test that cancelled tasks don't hang in await completion."""
 

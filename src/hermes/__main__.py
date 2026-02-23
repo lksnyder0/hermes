@@ -101,9 +101,11 @@ async def container_session_handler(
     proxy = None
     recorder = None
     timeout_task: Optional[asyncio.Task[None]] = None
+    _stage = "initializing"
 
     try:
         # Step 1: Allocate container
+        _stage = "allocating container"
         logger.info(f"Allocating container for session {session_info.session_id}")
         container = await container_pool.allocate(session_info.session_id)
 
@@ -133,6 +135,7 @@ async def container_session_handler(
         )
 
         # Step 4: Start proxy
+        _stage = "running session"
         await proxy.start()
 
         # Step 5: Wait for completion with timeout monitoring
@@ -142,7 +145,10 @@ async def container_session_handler(
         async def timeout_monitor() -> None:
             """Monitor session duration and trigger cleanup on timeout."""
             logger.info(f"Session timeout set to {timeout_seconds}s for {session_info.session_id}")
-            await asyncio.sleep(timeout_seconds)
+            try:
+                await asyncio.sleep(timeout_seconds)
+            except asyncio.CancelledError:
+                return
             timeout_expired.set()
             logger.warning(f"Session {session_info.session_id} timeout expired, initiating cleanup")
 
@@ -179,9 +185,9 @@ async def container_session_handler(
                 pass
 
     except Exception as e:
-        logger.error(f"Session handler error: {e}")
+        logger.error(f"Session handler error during {_stage}: {e}")
         try:
-            error_msg = b"\r\nContainer allocation failed - connection closed\r\n"
+            error_msg = b"\r\nSession error - connection closed\r\n"
             process.stdout.write(error_msg)
             await process.stdout.drain()
         except Exception:
