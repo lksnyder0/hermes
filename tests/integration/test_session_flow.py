@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hermes.config import ContainerPoolConfig, RecordingConfig
+from hermes.config import Config, ContainerPoolConfig, RecordingConfig
 from hermes.container.pool import ContainerPool
 from hermes.server.backend import PTYRequest, SessionInfo
 from hermes.__main__ import container_session_handler
@@ -89,6 +89,7 @@ class TestSessionHandlerWithRecorder:
                 pty_request=_pty_request(),
                 process=process,
                 container_pool=pool,
+                config=Config(),
                 recording_config=recording_config,
             )
 
@@ -121,6 +122,7 @@ class TestSessionHandlerWithRecorder:
                 pty_request=_pty_request(),
                 process=_mock_process(),
                 container_pool=pool,
+                config=Config(),
                 recording_config=None,
             )
 
@@ -146,13 +148,14 @@ class TestSessionHandlerErrorPaths:
             pty_request=_pty_request(),
             process=process,
             container_pool=pool,
+            config=Config(),
             recording_config=None,
         )
 
         # Error message written to client
         process.stdout.write.assert_called_once()
         written = process.stdout.write.call_args[0][0]
-        assert b"Container allocation failed" in written
+        assert b"Session error" in written
 
         # Release should NOT be called since allocation failed
         pool.release.assert_not_called()
@@ -175,6 +178,7 @@ class TestSessionHandlerErrorPaths:
                 pty_request=_pty_request(),
                 process=_mock_process(),
                 container_pool=pool,
+                config=Config(),
                 recording_config=None,
             )
 
@@ -204,6 +208,7 @@ class TestSessionHandlerErrorPaths:
                 pty_request=_pty_request(),
                 process=_mock_process(),
                 container_pool=pool,
+                config=Config(),
                 recording_config=recording_config,
             )
 
@@ -233,6 +238,7 @@ class TestSessionHandlerMetadataFlow:
                 pty_request=_pty_request(),
                 process=_mock_process(),
                 container_pool=pool,
+                config=Config(),
                 recording_config=None,
             )
 
@@ -261,6 +267,7 @@ class TestSessionHandlerMetadataFlow:
                 pty_request=pty,
                 process=_mock_process(),
                 container_pool=pool,
+                config=Config(),
                 recording_config=None,
             )
 

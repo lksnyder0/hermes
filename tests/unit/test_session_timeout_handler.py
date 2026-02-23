@@ -133,3 +133,31 @@ class TestTimeoutParameterHandling:
 
         assert proxy_instance.start.called
         assert config.server.session_timeout == short_timeout
+
+    async def test_session_times_out_and_cleans_up(
+        self, session_info, pty_request, mock_process, mock_container, mock_pool
+    ):
+        """Verify timeout fires, sends error to client stdout, and releases the container."""
+        short_timeout = 0.05  # 50ms — too short for real ServerConfig (ge=60), use MagicMock
+        config = MagicMock()
+        config.server.session_timeout = short_timeout
+        mock_pool.allocate.return_value = mock_container
+
+        async def slow_completion() -> None:
+            await asyncio.sleep(short_timeout * 4)  # outlives the timeout
+
+        with patch("hermes.__main__.ContainerProxy") as MockProxy:
+            proxy_instance = AsyncMock()
+            proxy_instance.wait_completion = AsyncMock(side_effect=slow_completion)
+            MockProxy.return_value = proxy_instance
+
+            await container_session_handler(
+                session_info, pty_request, mock_process, mock_pool, config
+            )
+
+        # Container must be released after timeout
+        mock_pool.release.assert_called_once_with(session_info.session_id)
+
+        # Timeout error message must be written to stdout (not stdin)
+        writes = [call.args[0] for call in mock_process.stdout.write.call_args_list]
+        assert any(b"timeout" in msg.lower() for msg in writes)

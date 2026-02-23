@@ -1,6 +1,7 @@
 """Unit tests for session timeout functionality."""
 
 import asyncio
+import time
 
 import pytest
 from hermes.config import Config
@@ -57,7 +58,7 @@ class TestTimeoutDataStructure:
     @pytest.mark.asyncio
     async def test_asyncio_sleep_basic(self):
         """Test basic asyncio.sleep usage."""
-        start = asyncio.get_event_loop().time()
+        start = time.perf_counter()
         await asyncio.sleep(0.01)  # 10ms
-        elapsed = asyncio.get_event_loop().time() - start
-        assert 0 <= elapsed < 100  # Allow some margin
+        elapsed = time.perf_counter() - start
+        assert 0.005 <= elapsed < 0.1  # Allow some margin but still verify the sleep duration
