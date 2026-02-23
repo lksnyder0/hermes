@@ -5,236 +5,338 @@ description: "Write async/await pytest tests for the Hermes project following es
 
 # Writing Pytest Tests for Hermes
 
-This skill guides you in writing pytest tests following Hermes project patterns and conventions.
+This skill guides you in writing pytest tests following Hermes project patterns, Python best practices, and a TDD-first workflow.
 
-## Quick Start: Core Pattern
+---
 
-All Hermes tests follow this structure:
+## TDD Workflow
+
+Always follow Red → Green → Refactor:
+
+1. **Red** — Write a failing test that specifies the desired behavior. Run it and confirm it fails for the right reason.
+2. **Green** — Write the minimal production code to make the test pass. Do not over-engineer.
+3. **Refactor** — Clean up code and tests while keeping the suite green.
+
+**Rules:**
+- Write the test before (or alongside) the implementation — never after.
+- A bug fix starts with a test that reproduces the bug.
+- A feature is complete only when tests pass, coverage ≥ 80%, mypy passes, and linting is clean.
+
+```bash
+# Red: confirm the test fails
+pytest tests/unit/test_my_feature.py::TestMyFeature::test_new_behavior -vvs
+
+# Green: implement, then confirm it passes
+pytest tests/unit/test_my_feature.py -v
+
+# Full suite: verify nothing regressed
+pytest
+```
+
+---
+
+## Test Tiers
+
+| Tier | Location | Marker | Needs Docker | Speed |
+|------|----------|--------|--------------|-------|
+| Unit | `tests/unit/` | `unit` | No | < 1s total |
+| Mocked integration | `tests/integration/test_*.py` | `integration` | No | < 2s total |
+| Real Docker integration | `tests/integration/test_*_docker.py` | `docker` | Yes | 10–60s |
+
+Choose the lowest tier that adequately covers the behavior. Most new tests are unit tests.
+
+---
+
+## Core Test Pattern
 
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-@pytest.fixture
-def my_fixture():
-    """Description of what this fixture provides."""
-    return setup_object()
-
 class TestMyFeature:
     @pytest.mark.asyncio
-    async def test_describes_one_behavior(self, my_fixture):
-        """Arrange / Act / Assert structure."""
-        # Arrange: set up test state
-        my_fixture.some_method.return_value = "expected"
-        
-        # Act: call the code being tested
-        result = await code_under_test(my_fixture)
-        
-        # Assert: verify expected behavior
-        assert result == "expected"
-        my_fixture.some_method.assert_called_once()
+    async def test_describes_one_behavior(
+        self, mock_pool: MagicMock, mock_container: MagicMock
+    ) -> None:
+        """One sentence: what is being tested."""
+        # Arrange
+        mock_pool.allocate = AsyncMock(return_value=mock_container)
+
+        # Act
+        result = await code_under_test(mock_pool)
+
+        # Assert
+        assert result == expected_value
+        mock_pool.allocate.assert_called_once()
 ```
 
 **Key rules:**
-- `async def` for all test functions; use `@pytest.mark.asyncio`
+- `async def` + `@pytest.mark.asyncio` for all async tests
+- Type-annotate test parameters and return `-> None`
 - One test = one behavior
-- Avoid excessive mocking; use realistic object implementations
 - Always test error cases alongside happy paths
-- Name tests descriptively: `test_allocates_and_releases_container`
+- Descriptive names: `test_releases_container_on_proxy_failure`
+
+---
+
+## Python Best Practices
+
+### Use `pytest.mark.parametrize` instead of duplicating tests
+
+```python
+@pytest.mark.parametrize("username,password,expected", [
+    ("root", "toor", True),
+    ("admin", "wrong", False),
+    ("", "", False),
+])
+def test_validates_credentials(
+    self, auth: AuthenticationManager, username: str, password: str, expected: bool
+) -> None:
+    assert auth.validate("conn1", username, password) is expected
+```
+
+### Use `pytest.raises` with `match=` to assert exception messages
+
+```python
+def test_rejects_invalid_timeout() -> None:
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        SessionConfig(idle_timeout=-1)
+```
+
+### Use `spec=` with MagicMock to catch attribute typos
+
+```python
+# Without spec: mock_pool.typo_method() succeeds silently
+# With spec: mock_pool.typo_method() raises AttributeError immediately
+mock_pool = MagicMock(spec=ContainerPool)
+mock_pool.allocate = AsyncMock(return_value=mock_container)
+```
+
+### Use `tmp_path` for temporary files (built-in pytest fixture)
+
+```python
+async def test_creates_recording_file(self, tmp_path: Path) -> None:
+    recorder = SessionRecorder(output_dir=tmp_path / "recordings")
+    await recorder.start(session_id="test-1")
+    assert (tmp_path / "recordings" / "test-1.cast").exists()
+```
+
+### Use `caplog` to assert log output
+
+```python
+def test_logs_allocation_failure(
+    self, mock_pool: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock_pool.allocate = AsyncMock(side_effect=RuntimeError("exhausted"))
+
+    with caplog.at_level(logging.ERROR, logger="hermes"):
+        await container_session_handler(..., container_pool=mock_pool)
+
+    assert "Container allocation failed" in caplog.text
+```
+
+### Use `monkeypatch` for environment variables and config
+
+```python
+def test_reads_config_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HERMES_PORT", "2222")
+    config = HermesConfig.from_env()
+    assert config.port == 2222
+```
+
+### Avoid common anti-patterns
+
+```python
+# ✗ Testing implementation details
+mock_pool.allocate.assert_called_with(session_id="abc", timeout=30)  # Too brittle
+
+# ✓ Testing observable behavior
+assert container.id == mock_container.id
+
+# ✗ Multiple behaviors in one test
+async def test_handler():
+    # Tests allocation AND recording AND cleanup — split these up
+
+# ✓ One assertion per test (or tightly related assertions)
+async def test_releases_container_after_proxy_completes():
+    ...
+    mock_pool.release.assert_called_once_with(session_id)
+
+# ✗ Bare except or swallowing exceptions in tests
+try:
+    await something()
+except Exception:
+    pass  # Never do this
+
+# ✓ Let exceptions propagate or use pytest.raises
+with pytest.raises(RuntimeError, match="pool exhausted"):
+    await something()
+```
+
+---
 
 ## Fixtures: Reusable Test Objects
 
-### Using Shared Fixtures
+### Shared fixtures from `tests/unit/conftest.py`
 
-Hermes provides common fixtures in `tests/unit/conftest.py`:
-
-- **`pty_request`**: Standard PTY configuration (xterm-256color, 120x40)
-- **`mock_process`**: Mock SSH process with stdin/stdout/stderr
-- **`mock_container`**: Mock Docker container
-- **`mock_pool`**: Mock ContainerPool
+- **`pty_request`**: Standard PTY configuration (xterm-256color, 120×40)
+- **`mock_process`**: Mock SSH process with async stdin/stdout
+- **`mock_container`**: Mock Docker container (`id = "abc123def456"`)
+- **`mock_pool`**: Mock ContainerPool with `allocate` / `release` AsyncMocks
 - **`mock_recorder`**: Mock SessionRecorder
-- **`patch_handler_deps()`**: Factory for patching handler dependencies
+- **`patch_handler_deps()`**: Factory that patches ContainerProxy and SessionRecorder together
 
-See [fixtures-guide.md](fixtures-guide.md) for details on creating and extending fixtures.
+### Shared fixtures from `tests/conftest.py`
 
-### Custom Fixtures for Your Tests
+Top-level fixtures available to all tests (unit + integration).
 
-Create fixtures in your test file or in `conftest.py` if they're reused across tests:
+### Error-case fixtures
+
+- `mock_process_eof` — stdin returns empty bytes (EOF)
+- `mock_process_write_error` — stdout.write raises after first call
+- `mock_container_exec_fails` — exec_run raises RuntimeError
+- `mock_container_socket_error` — socket.setblocking raises
+
+### Writing your own fixtures
+
+Add to your test file when used only there; add to `conftest.py` when used in 2+ tests.
 
 ```python
 @pytest.fixture
-def my_domain_config():
-    """Create a realistic config for domain tests."""
-    return MyConfig(
-        setting_a="value",
-        setting_b=42,
+def session_info() -> SessionInfo:
+    """Standard session for handler tests."""
+    return SessionInfo(
+        session_id="handler-test-1",
+        username="root",
+        source_ip="10.0.0.5",
+        source_port=9999,
+        authenticated=True,
     )
+
+@pytest.fixture
+def recording_config(tmp_path: Path) -> RecordingConfig:
+    """Recording config pointing to a temporary directory."""
+    return RecordingConfig(enabled=True, output_dir=tmp_path / "recordings")
 ```
 
-## Test Organization
+See [fixtures-guide.md](fixtures-guide.md) for scope, teardown, and parametrized fixture patterns.
 
-### Unit Tests (`tests/unit/`)
-
-Test isolated functionality with mocks for external dependencies.
-
-```python
-class TestContainerProxy:
-    @pytest.mark.asyncio
-    async def test_starts_exec_with_pty(self, mock_container, pty_request):
-        """Verify proxy correctly configures the exec command."""
-        proxy = ContainerProxy(mock_container, pty_request)
-        await proxy.start()
-        mock_container.exec_run.assert_called_with(...)
-```
-
-### Integration Tests (`tests/integration/`)
-
-Test real interactions between components. Use fewer mocks, more real objects (though still mock Docker).
-
-```python
-@pytest.mark.asyncio
-async def test_session_handler_lifecycle(tmp_path):
-    """Verify session handler orchestrates pool, proxy, and recorder."""
-    recording_config = RecordingConfig(
-        enabled=True,
-        output_dir=tmp_path / "recordings",
-    )
-    pool = MagicMock(spec=ContainerPool)
-    pool.allocate = AsyncMock(return_value=mock_container())
-    
-    await container_session_handler(
-        session_info=SessionInfo(...),
-        pty_request=PTYRequest(...),
-        process=_mock_process(),
-        container_pool=pool,
-        recording_config=recording_config,
-    )
-```
+---
 
 ## Async Testing Essentials
 
-### Awaiting Async Calls
-
-Always `await` async function calls in tests—don't skip them:
-
 ```python
-# ✓ Correct
-result = await my_async_function()
-assert result == expected
-
-# ✗ Wrong
-result = my_async_function()  # This returns a coroutine, not a result
-assert result == expected  # Assertion fails incorrectly
-```
-
-### AsyncMock for Async Mocks
-
-Use `AsyncMock` for methods that return awaitables:
-
-```python
-from unittest.mock import AsyncMock, MagicMock
-
+# AsyncMock for async methods; MagicMock for sync
 mock_process = MagicMock()
-mock_process.stdin = AsyncMock(return_value=b"data")  # Callable, returns awaitable
-mock_process.stdout = MagicMock()                      # Regular mock for non-async
-mock_process.stdout.write = MagicMock()                # Regular method
-mock_process.stdout.drain = AsyncMock()                # Async method
+mock_process.stdin = AsyncMock()           # async callable
+mock_process.stdout.write = MagicMock()   # sync callable
+mock_process.stdout.drain = AsyncMock()   # async callable
+
+# Always await async calls
+result = await my_async_function()   # ✓
+result = my_async_function()         # ✗ returns coroutine
+
+# side_effect for exceptions
+mock_pool.allocate = AsyncMock(side_effect=RuntimeError("exhausted"))
 ```
 
-See [async-patterns.md](async-patterns.md) for more async testing patterns.
+See [async-patterns.md](async-patterns.md) for concurrent operations, async context managers, and common pitfalls.
+
+---
 
 ## Error Cases Matter
-
-Always test both success and failure paths:
 
 ```python
 class TestErrorHandling:
     @pytest.mark.asyncio
-    async def test_handles_allocation_failure(self, mock_pool, mock_process):
-        """Verify error message written to client on failure."""
-        mock_pool.allocate.side_effect = RuntimeError("pool exhausted")
-        
+    async def test_writes_error_on_allocation_failure(
+        self, mock_pool: MagicMock, mock_process: MagicMock
+    ) -> None:
+        mock_pool.allocate = AsyncMock(side_effect=RuntimeError("pool exhausted"))
+
         await container_session_handler(..., container_pool=mock_pool)
-        
-        mock_process.stdout.write.assert_called_once()
+
         written = mock_process.stdout.write.call_args[0][0]
         assert b"Container allocation failed" in written
-    
+
     @pytest.mark.asyncio
-    async def test_releases_on_proxy_failure(self, mock_pool, mock_container):
-        """Verify cleanup runs even when proxy.start() fails."""
-        mock_pool.allocate.return_value = mock_container
-        
+    async def test_releases_container_even_on_proxy_failure(
+        self, mock_pool: MagicMock, mock_container: MagicMock
+    ) -> None:
+        mock_pool.allocate = AsyncMock(return_value=mock_container)
+
         with patch("hermes.__main__.ContainerProxy") as MockProxy:
             proxy = AsyncMock()
             proxy.start.side_effect = RuntimeError("exec failed")
             MockProxy.return_value = proxy
-            
-            await container_session_handler(...)
-        
-        mock_pool.release.assert_called_once()  # Still called despite error
+
+            await container_session_handler(..., container_pool=mock_pool)
+
+        mock_pool.release.assert_called_once()
 ```
 
-## Marking Tests
+---
 
-Use pytest markers for organization:
+## Markers
 
 ```python
 @pytest.mark.unit
-class TestSomething:
-    ...
+class TestSomething: ...
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_integration_scenario():
-    ...
+async def test_integration_scenario(): ...
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_real_docker_container(): ...
 
 @pytest.mark.slow
-@pytest.mark.asyncio
-async def test_heavyweight_operation():
-    ...
+async def test_heavyweight_operation(): ...
 ```
 
-Run tests selectively:
+---
+
+## Coverage
+
+The suite enforces **≥ 80% coverage** (`fail_under = 80` in `pyproject.toml`). Running `pytest` always measures coverage. If a new feature drops coverage, add tests for uncovered branches before marking the task done.
+
 ```bash
-pytest -m unit                    # Only unit tests
-pytest -m "integration and not slow"  # Integration tests excluding slow
-pytest tests/unit/test_file.py::TestClass::test_name -vvs  # Single test
+# See which lines are uncovered
+pytest --cov=hermes --cov-report=term-missing
+
+# HTML report at htmlcov/index.html
+pytest --cov=hermes --cov-report=html
 ```
 
-## Running Tests
+---
+
+## Key Commands
 
 ```bash
-# Run all tests with coverage
+# Run all tests (unit + mocked integration)
 pytest
 
-# Run with verbose output
-pytest -v
+# Single test with full output
+pytest tests/unit/test_file.py::TestClass::test_name -vvs
 
-# Run specific file/class/test
-pytest tests/unit/test_config.py::TestConfigLoading::test_loads_valid_config -vvs
+# Unit tests only
+pytest tests/unit/ -v
 
-# Run unit tests only
-pytest tests/unit/ -m unit
+# Mocked integration tests (no Docker needed)
+pytest tests/integration/ -m "not docker" -v
 
-# Generate HTML coverage report
-pytest --cov --cov-report=html
+# Real Docker tests
+pytest tests/integration/ -m docker -v
+
+# List available fixtures
+pytest --fixtures tests/unit
 ```
 
-## Best Practices
-
-1. **Minimize mock boilerplate**: Use shared fixtures from `conftest.py`
-2. **Test behavior, not mocks**: Write tests that verify what the code does, not how it calls dependencies
-3. **One test, one assertion**: Each test verifies one specific behavior
-4. **Descriptive names**: Test names should describe what they verify, e.g. `test_releases_container_on_proxy_failure`
-5. **Real implementations preferred**: Mock Docker/async dependencies, but use real config objects, real data structures
-6. **Proper cleanup**: Use `finally` blocks and context managers to ensure resources are released
-7. **Realistic error conditions**: Test with actual exception types and realistic failure modes
+---
 
 ## Advanced Patterns
 
-For specific patterns like mocking containers, using realistic implementations, and advanced async scenarios, see:
-
-- [test-patterns.md](test-patterns.md) - Real patterns from Hermes codebase
-- [fixtures-guide.md](fixtures-guide.md) - Creating and extending fixtures
-- [async-patterns.md](async-patterns.md) - Advanced async/await patterns
+- [test-patterns.md](test-patterns.md) — Real patterns from the Hermes codebase
+- [fixtures-guide.md](fixtures-guide.md) — Creating, scoping, and extending fixtures
+- [async-patterns.md](async-patterns.md) — Advanced async/await patterns and pitfalls
