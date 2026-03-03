@@ -141,6 +141,7 @@ async def container_session_handler(
         # Step 5: Wait for completion with timeout monitoring
         timeout_seconds = config.server.session_timeout
         timeout_expired = asyncio.Event()
+        timeout_task_cancelled_early = False
 
         async def timeout_monitor() -> None:
             """Monitor session duration and trigger cleanup on timeout."""
@@ -148,7 +149,10 @@ async def container_session_handler(
             try:
                 await asyncio.sleep(timeout_seconds)
             except asyncio.CancelledError:
-                return
+                # If this is cancelled early (due to exception in setup phase), don't log timeout warning
+                if timeout_task_cancelled_early:
+                    return
+                raise  # Re-raise if cancelled for other reasons
             timeout_expired.set()
             logger.warning(f"Session {session_info.session_id} timeout expired, initiating cleanup")
 
