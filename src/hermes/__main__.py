@@ -100,9 +100,12 @@ async def container_session_handler(
     container = None
     proxy = None
     recorder = None
+    timeout_task: Optional[asyncio.Task[None]] = None
+    _stage = "initializing"
 
     try:
         # Step 1: Allocate container
+        _stage = "allocating container"
         logger.info(f"Allocating container for session {session_info.session_id}")
         container = await container_pool.allocate(session_info.session_id)
 
@@ -131,17 +134,25 @@ async def container_session_handler(
             recorder=recorder,
         )
 
-        # Step 4: Start proxy
+        # Step 4: Start proxy (this is where many things can go wrong)
+        _stage = "starting proxy"
         await proxy.start()
 
         # Step 5: Wait for completion with timeout monitoring
         timeout_seconds = config.server.session_timeout
         timeout_expired = asyncio.Event()
+        timeout_task_cancelled_early = False
 
-        async def timeout_monitor():
+        async def timeout_monitor() -> None:
             """Monitor session duration and trigger cleanup on timeout."""
             logger.info(f"Session timeout set to {timeout_seconds}s for {session_info.session_id}")
-            await asyncio.sleep(timeout_seconds)
+            try:
+                await asyncio.sleep(timeout_seconds)
+            except asyncio.CancelledError:
+                # If this is cancelled early (due to exception in setup phase), don't log timeout warning
+                if timeout_task_cancelled_early:
+                    return
+                raise  # Re-raise if cancelled for other reasons
             timeout_expired.set()
             logger.warning(f"Session {session_info.session_id} timeout expired, initiating cleanup")
 
@@ -152,23 +163,51 @@ async def container_session_handler(
             {timeout_task, container_task}, return_when=asyncio.FIRST_COMPLETED
         )
 
-        # Cancel pending tasks
+        # Cancel pending tasks and await graceful cancellation
         for task in pending:
             task.cancel()
+        for task in pending:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Propagate any exception raised by the container task
+        if container_task in done and not container_task.cancelled():
+            exc = container_task.exception()
+            if exc is not None:
+                raise exc
 
         # Handle timeout expiration
         if timeout_expired.is_set():
             logger.info(f"Session {session_info.session_id} timed out, releasing container")
             try:
                 error_msg = b"\r\nSession timeout - connection closed\r\n"
-                process.stdin.write(error_msg)
-                await process.stdin.drain()
+                process.stdout.write(error_msg)
+                await process.stdout.drain()
             except Exception:
                 pass
 
+    except Exception as e:
+        # Different error messages depending on the stage at which failure occurred
+        logger.error(f"Session handler error during {_stage}: {e}")
+        try:
+            if _stage == "allocating container":
+                error_msg = b"\r\nContainer allocation failed - connection closed\r\n"
+            elif _stage == "starting proxy":
+                error_msg = b"\r\nProxy initialization failed - connection closed\r\n"
+            else:
+                # Generic fallback for unexpected stages
+                error_msg = b"\r\nSession error - connection closed\r\n"
+            
+            process.stdout.write(error_msg)
+            await process.stdout.drain()
+        except Exception:
+            pass
+
     finally:
         # Cancel timeout task to prevent memory leak
-        if "timeout_task" in locals() and timeout_task:
+        if timeout_task:
             timeout_task.cancel()
             try:
                 await timeout_task
