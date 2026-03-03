@@ -134,8 +134,8 @@ async def container_session_handler(
             recorder=recorder,
         )
 
-        # Step 4: Start proxy
-        _stage = "running session"
+        # Step 4: Start proxy (this is where many things can go wrong)
+        _stage = "starting proxy"
         await proxy.start()
 
         # Step 5: Wait for completion with timeout monitoring
@@ -189,9 +189,17 @@ async def container_session_handler(
                 pass
 
     except Exception as e:
+        # Different error messages depending on the stage at which failure occurred
         logger.error(f"Session handler error during {_stage}: {e}")
         try:
-            error_msg = b"\r\nSession error - connection closed\r\n"
+            if _stage == "allocating container":
+                error_msg = b"\r\nContainer allocation failed - connection closed\r\n"
+            elif _stage == "starting proxy":
+                error_msg = b"\r\nProxy initialization failed - connection closed\r\n"
+            else:
+                # Generic fallback for unexpected stages
+                error_msg = b"\r\nSession error - connection closed\r\n"
+            
             process.stdout.write(error_msg)
             await process.stdout.drain()
         except Exception:
