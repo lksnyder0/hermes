@@ -184,13 +184,21 @@ hermes/
   - Security constraints (network isolation, resource limits, capabilities)
   - Docker integration with graceful shutdown
   - Target container image (Ubuntu 22.04)
-- [ ] **Phase 4**: Command proxying (SSH ↔ Docker)
-- [ ] **Phase 5**: Session recording (asciinema format)
-- [ ] **Phase 6**: Configuration system
-- [ ] **Phase 7**: Security hardening
+- [x] **Phase 4**: Command proxying (SSH ↔ Docker)
+  - Bidirectional I/O streaming between SSH sessions and container exec
+  - PTY support via asyncssh `process_factory`
+- [x] **Phase 5**: Session recording (asciinema format)
+  - Asciinema v2 format with local filesystem storage
+  - Structured JSON logging and metadata validation
+- [x] **Phase 6**: Configuration system
+  - Pydantic-validated YAML configuration
+  - Configuration integrated across the codebase
+- [x] **Phase 7**: Security hardening
+  - Enforced session timeouts with graceful container release
+  - Capability dropping, `no-new-privileges`, resource limits
 - [ ] **Phase 8**: Deployment (Docker Compose)
-- [ ] **Phase 9**: Testing suite
-- [ ] **Phase 10**: Documentation
+- [ ] **Phase 9**: Testing suite _(in progress — 292 tests passing, 80%+ coverage)_
+- [ ] **Phase 10**: Documentation _(in progress — README, CLAUDE.md done; SECURITY.md pending)_
 
 ### Post-MVP
 
